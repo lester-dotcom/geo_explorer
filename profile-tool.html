@@ -562,6 +562,7 @@ function renderResults() {
 
   <div class="export-row">
     <button class="export-btn green" onclick="exportProfile()">↓ Export profile CSV</button>
+    <button class="export-btn" onclick="generateBrief()" style="background:#4c565c;color:#fff;border-color:#4c565c">📄 Generate client brief</button>
   </div>
 
 </div>
@@ -1162,6 +1163,343 @@ function loadSample() {
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+// ── Brief generator ──────────────────────────────────────────────────────
+function generateBrief() {
+  if (!profileData) { alert('Run analysis first.'); return; }
+
+  // Read branding from localStorage (set by launcher customise panel)
+  let branding = {};
+  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  const agencyName  = branding.name      || 'Pratt Digital';
+  const primary     = branding.primary   || '#aec90b';
+  const secondary   = branding.secondary || '#f0a500';
+  const logoSrc     = branding.logo      || '';
+
+  const pd = profileData;
+  const {enriched, avgImd, avgHp, pctRural, avgYoung, avgMid, avgOlder,
+         avgProf, avgNoCar, avgDegree, lookalikes, underindex, total} = pd;
+  const n = enriched.length;
+  const matchPct = Math.round(n / (total||n) * 100);
+
+  // Colour helpers
+  function darken(hex, pct) {
+    const num = parseInt(hex.slice(1),16), f = 1-pct/100;
+    const r=Math.max(0,Math.round(((num>>16)&0xff)*f));
+    const g=Math.max(0,Math.round(((num>>8)&0xff)*f));
+    const b=Math.max(0,Math.round((num&0xff)*f));
+    return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+  function lighten(hex, pct) {
+    const num = parseInt(hex.slice(1),16), f = pct/100;
+    const r=Math.min(255,Math.round(((num>>16)&0xff)+(255-((num>>16)&0xff))*f));
+    const g=Math.min(255,Math.round(((num>>8)&0xff)+(255-((num>>8)&0xff))*f));
+    const b=Math.min(255,Math.round((num&0xff)+(255-(num&0xff))*f));
+    return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+
+  const primaryDark  = darken(primary, 15);
+  const primaryLight = lighten(primary, 88);
+
+  // Region distribution
+  const regionDist = {};
+  enriched.filter(e=>!['Scotland','Wales','Northern Ireland'].includes(e.region))
+    .forEach(e=>{ regionDist[e.region]=(regionDist[e.region]||0)+1; });
+  const regionSorted = Object.entries(regionDist).sort((a,b)=>b[1]-a[1]);
+  const maxRegion = regionSorted[0]?.[1]||1;
+
+  // Top districts
+  const distCount = {};
+  enriched.forEach(e=>{ distCount[e.district]=(distCount[e.district]||0)+1; });
+  const topDists = Object.entries(distCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const maxDist = topDists[0]?.[1]||1;
+
+  // IMD distribution
+  const imdDist = {};
+  for(let i=1;i<=10;i++) imdDist[i]=0;
+  enriched.forEach(e=>{ imdDist[e.imd]=(imdDist[e.imd]||0)+1; });
+
+  // Top lookalikes and underindex
+  const topLookalikes = (lookalikes||[]).slice(0,12);
+  const topUnderindex = (underindex||[]).slice(0,10);
+
+  // High priority recommendations
+  const highRecs = [];
+  try {
+    const topRegion = regionSorted[0]?.[0]||'England';
+    const recs = generateRecommendations(enriched, avgImd||5, avgHp||5, pctRural||20, lookalikes||[], topRegion);
+    highRecs.push(...recs.filter(r=>r.priority==='high').slice(0,3));
+    highRecs.push(...recs.filter(r=>r.priority==='mid').slice(0,2));
+  } catch(e) {}
+
+  const channelLabels = {
+    'ch-meta':'Meta Ads','ch-google':'Google Ads','ch-ooh':'Out of Home',
+    'ch-dm':'Direct Mail','ch-search':'Paid Search','ch-display':'Programmatic'
+  };
+
+  const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  const dominantImd = Math.round(avgImd||5);
+  const dominantHp  = Math.round(avgHp||5);
+  const dominantAge = (avgOlder||35)>(avgMid||40)&&(avgOlder||35)>(avgYoung||25)?'55+'
+    :(avgMid||40)>(avgYoung||25)?'35–54':'16–34';
+
+  const briefHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Customer Intelligence Brief — ${agencyName}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --primary:${primary}; --primary-dark:${primaryDark}; --primary-light:${primaryLight}; --secondary:${secondary}; --slate:#4c565c; --muted:#6b6960; --border:#e2e0d8; --bg:#f5f4f0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'DM Sans',sans-serif; color:#1a1a18; background:#fff; font-size:13px; line-height:1.6; }
+
+  /* Print */
+  @media print {
+    body { font-size:11px; }
+    .no-print { display:none !important; }
+    .page-break { page-break-before:always; }
+    .card { break-inside:avoid; }
+  }
+  @page { margin:15mm 15mm 15mm 15mm; size:A4; }
+
+  /* Layout */
+  .page { max-width:860px; margin:0 auto; padding:30px; }
+
+  /* Header */
+  .brief-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:16px; border-bottom:4px solid var(--primary); margin-bottom:24px; }
+  .header-logo { max-height:44px; max-width:180px; object-fit:contain; }
+  .header-logo.placeholder { background:var(--primary); color:var(--slate); font-weight:700; font-size:14px; padding:8px 14px; border-radius:6px; display:flex; align-items:center; }
+  .header-right { text-align:right; }
+  .brief-title { font-size:20px; font-weight:700; color:var(--slate); }
+  .brief-meta { font-size:11px; color:var(--muted); margin-top:3px; }
+
+  /* Section headers */
+  .section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--primary-dark); margin:20px 0 10px; padding-bottom:5px; border-bottom:1px solid var(--border); }
+
+  /* Stat grid */
+  .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .stat-card { background:var(--bg); border-radius:8px; padding:10px 12px; border-left:3px solid var(--primary); }
+  .stat-card h4 { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:4px; }
+  .stat-card .val { font-size:20px; font-weight:700; color:var(--slate); line-height:1; }
+  .stat-card .sub { font-size:10px; color:var(--muted); margin-top:3px; }
+
+  /* Portrait */
+  .portrait-box { background:linear-gradient(135deg,${primaryLight},#eef1fc); border:1px solid var(--primary); border-radius:10px; padding:14px 18px; font-size:12px; line-height:1.9; margin-bottom:16px; }
+  .portrait-box strong { color:var(--slate); }
+
+  /* Bar charts */
+  .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:11px; }
+  .bar-label { min-width:120px; color:var(--muted); font-size:10px; }
+  .bar-label.bold { font-weight:600; color:#1a1a18; }
+  .bar-track { flex:1; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:3px; }
+  .bar-val { min-width:32px; text-align:right; font-size:10px; font-weight:600; }
+
+  /* Two col */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+
+  /* Lookalike grid */
+  .match-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .match-item { background:var(--bg); border-radius:6px; padding:7px 9px; border-left:2px solid var(--primary); }
+  .match-item .dist { font-family:monospace; font-size:12px; font-weight:700; }
+  .match-item .score { font-size:10px; font-weight:700; color:var(--primary-dark); }
+  .match-item .detail { font-size:9px; color:var(--muted); margin-top:2px; line-height:1.4; }
+
+  /* Underindex grid */
+  .under-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .under-item { background:#fdf0f0; border-radius:6px; padding:7px 9px; border-left:2px solid #e24b4a; }
+  .under-item .dist { font-family:monospace; font-size:12px; font-weight:700; }
+  .under-item .idx { font-size:10px; font-weight:700; color:#b91c1c; }
+  .under-item .detail { font-size:9px; color:var(--muted); margin-top:2px; line-height:1.4; }
+
+  /* Recs */
+  .rec-item { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px; border-left:3px solid var(--primary); }
+  .rec-item.mid { border-left-color:var(--secondary); }
+  .rec-channels { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:5px; }
+  .ch-badge { font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; }
+  .ch-meta { background:#eef1fc; color:#2d5be3; }
+  .ch-google { background:#fef9c3; color:#854d0e; }
+  .ch-ooh { background:#f0fdf4; color:#166534; }
+  .ch-dm { background:#fdf4ff; color:#7e22ce; }
+  .ch-search { background:#fff7ed; color:#9a3412; }
+  .ch-display { background:#f0f9ff; color:#0369a1; }
+  .rec-title { font-size:12px; font-weight:600; margin-bottom:4px; }
+  .rec-rationale { font-size:11px; color:var(--muted); line-height:1.6; }
+
+  /* Print button */
+  .print-bar { position:fixed; bottom:20px; right:20px; display:flex; gap:8px; z-index:100; }
+  .print-btn { padding:10px 18px; border-radius:8px; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; }
+  .print-btn.primary { background:var(--primary); color:var(--slate); }
+  .print-btn.secondary { background:#fff; color:var(--slate); border:1px solid var(--border); }
+
+  /* Footer */
+  .brief-footer { margin-top:24px; padding-top:12px; border-top:1px solid var(--border); display:flex; justify-content:space-between; font-size:10px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="brief-header">
+    ${logoSrc ? `<img class="header-logo" src="${logoSrc}" alt="${agencyName}">` : `<div class="header-logo placeholder">${agencyName}</div>`}
+    <div class="header-right">
+      <div class="brief-title">Customer Intelligence Brief</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite</div>
+    </div>
+  </div>
+
+  <!-- Pen portrait -->
+  <div class="section-title">Customer pen portrait</div>
+  <div class="portrait-box">${document.querySelector('.pen-portrait')?.innerHTML || 'Profile data not available.'}</div>
+
+  <!-- At a glance -->
+  <div class="section-title">At a glance</div>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <h4>Match rate</h4>
+      <div class="val">${matchPct}%</div>
+      <div class="sub">${n.toLocaleString()} of ${(total||n).toLocaleString()} postcodes</div>
+    </div>
+    <div class="stat-card">
+      <h4>Deprivation avg</h4>
+      <div class="val">Decile ${dominantImd}</div>
+      <div class="sub">${IMD_LABELS[dominantImd]||''}</div>
+    </div>
+    <div class="stat-card">
+      <h4>House prices avg</h4>
+      <div class="val">Band ${dominantHp}/10</div>
+      <div class="sub">${HP_LABELS[dominantHp]||''}</div>
+    </div>
+    <div class="stat-card">
+      <h4>Dominant age</h4>
+      <div class="val">${dominantAge}</div>
+      <div class="sub">${Math.round(avgYoung||0)}% / ${Math.round(avgMid||0)}% / ${Math.round(avgOlder||0)}%</div>
+    </div>
+    <div class="stat-card">
+      <h4>Professional occ.</h4>
+      <div class="val">${Math.round(avgProf||0)}%</div>
+      <div class="sub">Managers &amp; professionals</div>
+    </div>
+    <div class="stat-card">
+      <h4>Degree-level</h4>
+      <div class="val">${Math.round(avgDegree||0)}%</div>
+      <div class="sub">Adult qualifications</div>
+    </div>
+    <div class="stat-card">
+      <h4>No car households</h4>
+      <div class="val">${Math.round(avgNoCar||0)}%</div>
+      <div class="sub">${Math.round(avgNoCar||0)>30?'Urban-dependent':'Car-owning'}</div>
+    </div>
+    <div class="stat-card">
+      <h4>Urban / rural</h4>
+      <div class="val">${Math.round(100-(pctRural||0))}% urban</div>
+      <div class="sub">${Math.round(pctRural||0)}% rural</div>
+    </div>
+  </div>
+
+  <!-- Age & socioeconomic -->
+  <div class="two-col">
+    <div>
+      <div class="section-title">Age distribution</div>
+      ${[['16–34 (young)',Math.round(avgYoung||0),'#2d5be3'],['35–54 (mid)',Math.round(avgMid||0),'#18a058'],['55+ (older)',Math.round(avgOlder||0),'#f59e0b']].map(([l,v,c])=>`
+        <div class="bar-row">
+          <span class="bar-label ${v===Math.max(Math.round(avgYoung||0),Math.round(avgMid||0),Math.round(avgOlder||0))?'bold':''}">${l}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,v*2)}%;background:${c}"></div></div>
+          <span class="bar-val">${v}%</span>
+        </div>`).join('')}
+    </div>
+    <div>
+      <div class="section-title">Socioeconomic indicators</div>
+      ${[['Professional/managerial',Math.round(avgProf||0),'#9333ea'],['Degree-level qualified',Math.round(avgDegree||0),'#06b6d4'],['No car households',Math.round(avgNoCar||0),'#94a3b8']].map(([l,v,c])=>`
+        <div class="bar-row">
+          <span class="bar-label">${l}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,v*1.5)}%;background:${c}"></div></div>
+          <span class="bar-val">${v}%</span>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Regional & districts -->
+  <div class="two-col" style="margin-top:16px">
+    <div>
+      <div class="section-title">Regional breakdown</div>
+      ${regionSorted.slice(0,6).map(([r,c],i)=>`
+        <div class="bar-row">
+          <span class="bar-label">${r}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(c/maxRegion*100)}%;background:${['#2d5be3','#e35b2d','#18a058','#9333ea','#f59e0b','#06b6d4'][i%6]}"></div></div>
+          <span class="bar-val">${Math.round(c/n*100)}%</span>
+        </div>`).join('')}
+    </div>
+    <div>
+      <div class="section-title">Top postcode districts</div>
+      ${topDists.map(([d,c])=>`
+        <div class="bar-row">
+          <span class="bar-label" style="font-family:monospace;font-size:11px">${d}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(c/maxDist*100)}%;background:var(--primary)"></div></div>
+          <span class="bar-val">${c}</span>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  ${topLookalikes.length ? `
+  <!-- Lookalike gap districts -->
+  <div class="section-title page-break">Gap districts — matching profile, no current presence</div>
+  <div class="match-grid">
+    ${topLookalikes.map(m=>`
+      <div class="match-item">
+        <div class="dist">${m.district}</div>
+        <div class="score">Match ${m.score}%</div>
+        <div class="detail">${m.stats.region}<br>IMD ${m.stats.imd} · HP ${m.stats.hp} · ${m.stats.rural?'Rural':'Urban'}<br>${m.stats.age_young||'?'}/${m.stats.age_mid||'?'}/${m.stats.age_older||'?'}% age</div>
+      </div>`).join('')}
+  </div>` : ''}
+
+  ${topUnderindex.length ? `
+  <!-- Underindex districts -->
+  <div class="section-title">Underindexing districts — present but underperforming potential</div>
+  <div class="under-grid">
+    ${topUnderindex.map(r=>`
+      <div class="under-item">
+        <div class="dist">${r.district}</div>
+        <div class="idx">Index ${r.index} · Gap ${r.gap}</div>
+        <div class="detail">${r.stats.region}<br>Actual ${r.count} vs expected ${r.expectedCount}<br>Profile match ${r.profileScore}%</div>
+      </div>`).join('')}
+  </div>` : ''}
+
+  ${highRecs.length ? `
+  <!-- Channel recommendations -->
+  <div class="section-title">Recommended channel mix</div>
+  ${highRecs.map(r=>`
+    <div class="rec-item ${r.priority}">
+      <div class="rec-channels">
+        ${r.channels.map(c=>`<span class="ch-badge ${c}">${channelLabels[c]||c}</span>`).join('')}
+        <span style="margin-left:auto;font-size:9px;font-weight:600;color:${r.priority==='high'?'#145c38':'#b45309'};background:${r.priority==='high'?'#e8f7f0':'#fff7ed'};padding:2px 6px;border-radius:3px">${r.priority==='high'?'High priority':'Worth considering'}</span>
+      </div>
+      <div class="rec-title">${r.title}</div>
+      <div class="rec-rationale">${r.rationale.replace(/<[^>]+>/g,'').slice(0,200)}${r.rationale.length>200?'…':''}</div>
+    </div>`).join('')}` : ''}
+
+  <!-- Footer -->
+  <div class="brief-footer">
+    <span>${agencyName} · Geo Intelligence Suite</span>
+    <span>Generated ${today} · Confidential</span>
+  </div>
+
+</div>
+
+<!-- Print controls -->
+<div class="print-bar no-print">
+  <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
+  <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
+</div>
+
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+
 // ── District map ──────────────────────────────────────────────────────────
 let districtMap     = null;
 let districtMapOpen = false;
