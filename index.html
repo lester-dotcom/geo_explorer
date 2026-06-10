@@ -76,7 +76,7 @@ main {
 }
 
 /* ── Tool cards ── */
-.tools { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; width: 100%; max-width: 860px; }
+.tools { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; width: 100%; max-width: 1100px; }
 
 .tool-card {
   background: var(--surface);
@@ -241,6 +241,7 @@ footer {
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .tools { grid-template-columns: 1fr; }
+  .hero h2 { font-size: 20px; }
   .hero h2 { font-size: 22px; }
 }
 </style>
@@ -311,6 +312,28 @@ footer {
       <div class="tool-cta">
         <button class="tool-btn secondary" onclick="event.stopPropagation(); loadTool('profile-tool.html', event)">Open tool →</button>
         <span class="tool-note">Matches 99%+ of UK postcodes</span>
+      </div>
+    </a>
+
+    <!-- Tool 3: Customer Mapper -->
+    <a class="tool-card" id="card-customer" href="#" onclick="loadTool('customer-map.html', event)">
+      <div class="tool-header">
+        <div class="tool-icon map" style="background:#f0fdf4">🔵</div>
+        <div class="tool-meta">
+          <span class="tag map" style="background:#f0fdf4;color:#166534">Quick View</span>
+          <h3>Customer Location Map</h3>
+        </div>
+      </div>
+      <p class="tool-desc">Fast single-dataset customer postcode visualisation. Plot where your customers are with dots, heatmap and postcode district views. No second dataset needed.</p>
+      <div class="tool-features">
+        <div class="tool-feature">Dot, heatmap &amp; district layers</div>
+        <div class="tool-feature">Top 10 postcode district chart</div>
+        <div class="tool-feature">5,000+ postcode performance</div>
+        <div class="tool-feature">Export with lat/lng &amp; district</div>
+      </div>
+      <div class="tool-cta">
+        <button class="tool-btn" style="background:#166534;color:#fff" onclick="event.stopPropagation(); loadTool('customer-map.html', event)">Open tool →</button>
+        <span class="tool-note">Quickest way to see coverage</span>
       </div>
     </a>
 
