@@ -125,6 +125,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 .tl-legend{display:flex;gap:16px;padding:10px 20px;background:var(--bg);border-top:1px solid var(--border);flex-wrap:wrap;}
 .tl-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
 .tl-swatch{width:10px;height:10px;border-radius:2px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+.modal-overlay.open{display:flex;}
+.modal{background:#fff;border-radius:var(--radius);padding:24px;width:100%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.15);}
+.modal h3{font-size:15px;font-weight:600;color:var(--slate);margin-bottom:16px;}
+.modal-footer{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
 @media(max-width:600px){.summary-grid{grid-template-columns:1fr 1fr;}.comp-grid{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -204,6 +209,31 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 <footer id="footer" style="display:none">
   <span id="footerText">Offer Watchdog · Pratt Digital · Data refreshed daily at 7am</span>
 </footer>
+
+<!-- Edit competitor modal -->
+<div class="modal-overlay" id="editModal" onclick="closeEditModal(event)">
+  <div class="modal">
+    <h3>Edit competitor</h3>
+    <input type="hidden" id="editId">
+    <div class="field-group" style="margin-bottom:12px">
+      <span class="field-label">Name</span>
+      <input class="field-input" id="editName" type="text">
+    </div>
+    <div class="field-group" style="margin-bottom:12px">
+      <span class="field-label">Homepage URL</span>
+      <input class="field-input" id="editUrl" type="url">
+    </div>
+    <div class="field-group" style="margin-bottom:12px">
+      <span class="field-label">Sale / category page URL</span>
+      <input class="field-input" id="editCatUrl" type="url" placeholder="e.g. https://competitor.com/sale">
+    </div>
+    <div id="editStatus" style="font-size:12px;color:var(--muted);min-height:18px"></div>
+    <div class="modal-footer">
+      <button class="refresh-btn" onclick="document.getElementById('editModal').classList.remove('open')">Cancel</button>
+      <button class="connect-btn" onclick="saveEdit()" style="width:auto;padding:8px 20px">Save changes</button>
+    </div>
+  </div>
+</div>
 
 <script>
 let CONFIG = {};
@@ -438,7 +468,10 @@ function renderDashboard(competitors, changes) {
             ${changed ? '<span class="badge changed">Changed today</span>' : '<span class="badge no-change">No change today</span>'}
           </div>
         </div>
-        <a href="${comp.url.startsWith('http')?comp.url:'https://'+comp.url}" target="_blank" style="font-size:11px;color:var(--muted);text-decoration:none;white-space:nowrap;padding-top:2px">Visit site ↗</a>
+        <div style="display:flex;gap:6px;align-items:center">
+          <a href="${comp.url.startsWith('http')?comp.url:'https://'+comp.url}" target="_blank" style="font-size:11px;color:var(--muted);text-decoration:none;white-space:nowrap">Visit ↗</a>
+          <button onclick="editCompetitor('${comp.id}','${comp.name.replace(/'/g,"\\'")}','${comp.url}','${(comp.category_url||'').replace(/'/g,"\\'")}');event.stopPropagation()" style="font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);cursor:pointer;color:var(--muted)">Edit</button>
+        </div>
       </div>
       <div class="comp-body">
         <div class="offers-list">${offerItems}</div>
@@ -512,6 +545,50 @@ function renderDashboard(competitors, changes) {
 
   document.getElementById('loadingState').style.display = 'none';
   document.getElementById('content').style.display = 'block';
+}
+
+// ── Edit competitor ──────────────────────────────────────────────────────
+function editCompetitor(id, name, url, catUrl) {
+  document.getElementById('editId').value = id;
+  document.getElementById('editName').value = name;
+  document.getElementById('editUrl').value = url;
+  document.getElementById('editCatUrl').value = catUrl || '';
+  document.getElementById('editStatus').textContent = '';
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeEditModal(e) {
+  if (e.target.id === 'editModal') document.getElementById('editModal').classList.remove('open');
+}
+
+async function saveEdit() {
+  const id      = document.getElementById('editId').value;
+  const name    = document.getElementById('editName').value.trim();
+  const url     = document.getElementById('editUrl').value.trim();
+  const catUrl  = document.getElementById('editCatUrl').value.trim();
+  const status  = document.getElementById('editStatus');
+
+  if (!name || !url) { status.textContent = 'Name and URL required.'; status.style.color='var(--red)'; return; }
+  status.textContent = 'Saving…'; status.style.color = 'var(--muted)';
+
+  try {
+    const res = await fetch(`${CONFIG.url}/competitors/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': CONFIG.key },
+      body: JSON.stringify({ name, url, category_url: catUrl || null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Save failed');
+    status.textContent = '✓ Saved';
+    status.style.color = 'var(--green)';
+    setTimeout(() => {
+      document.getElementById('editModal').classList.remove('open');
+      loadData();
+    }, 800);
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
 }
 
 // ── Manual scrape ────────────────────────────────────────────────────────
