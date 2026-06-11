@@ -94,6 +94,37 @@ main{max-width:1100px;margin:0 auto;padding:28px 24px;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .error-msg{background:var(--red-light);border:1px solid var(--red);border-radius:var(--radius);padding:16px;font-size:13px;color:var(--red);margin-bottom:20px;}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:20px;}
+.view-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px;background:#fff;border-radius:var(--radius) var(--radius) 0 0;overflow:hidden;}
+.view-tab{padding:11px 20px;font-size:13px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;background:none;border-top:none;border-left:none;border-right:none;font-family:"DM Sans",sans-serif;}
+.view-tab:hover{color:var(--text);background:var(--bg);}
+.view-tab.active{color:var(--text);font-weight:600;border-bottom-color:var(--primary-dark);}
+.timeline-wrap{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px;}
+.timeline-head{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.timeline-head-title{font-size:13px;font-weight:600;color:var(--slate);}
+.timeline-days{display:flex;gap:0;overflow-x:auto;padding:0 20px 0 160px;border-bottom:1px solid var(--border);background:var(--bg);}
+.timeline-day{min-width:32px;flex:1;text-align:center;font-size:9px;color:var(--muted);padding:6px 0;border-right:1px solid var(--border);font-weight:500;}
+.timeline-day.today{color:var(--primary-dark);font-weight:700;background:var(--primary-light);}
+.timeline-row{display:flex;align-items:stretch;border-bottom:1px solid var(--border);}
+.timeline-row:last-child{border-bottom:none;}
+.timeline-label{min-width:160px;max-width:160px;padding:10px 14px;font-size:12px;font-weight:500;color:var(--slate);border-right:1px solid var(--border);display:flex;align-items:center;background:#fff;flex-shrink:0;}
+.timeline-label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.timeline-cells{display:flex;flex:1;position:relative;}
+.timeline-cell{flex:1;min-width:32px;border-right:0.5px solid var(--border);position:relative;}
+.timeline-cell.today{background:var(--primary-light);}
+.timeline-event{position:absolute;top:6px;bottom:6px;border-radius:4px;font-size:9px;font-weight:600;display:flex;align-items:center;padding:0 5px;white-space:nowrap;overflow:hidden;cursor:pointer;z-index:2;}
+.timeline-event.sale{background:var(--amber-light);color:#92400e;border:1px solid var(--amber);}
+.timeline-event.discount{background:var(--blue-light);color:#1e40af;border:1px solid #93c5fd;}
+.timeline-event.shipping{background:var(--green-light);color:#166534;border:1px solid #86efac;}
+.timeline-event.code{background:var(--purple-light);color:#6d28d9;border:1px solid #c4b5fd;}
+.timeline-event.ended{background:var(--bg);color:var(--muted);border:1px dashed var(--border);text-decoration:line-through;}
+.timeline-dot{width:8px;height:8px;border-radius:50%;position:absolute;top:50%;transform:translateY(-50%);z-index:3;}
+.timeline-dot.sale{background:var(--amber);}
+.timeline-dot.new{background:var(--primary-dark);}
+.timeline-dot.ended{background:var(--muted);}
+.timeline-dot.ship{background:var(--green);}
+.tl-legend{display:flex;gap:16px;padding:10px 20px;background:var(--bg);border-top:1px solid var(--border);flex-wrap:wrap;}
+.tl-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+.tl-swatch{width:10px;height:10px;border-radius:2px;}
 @media(max-width:600px){.summary-grid{grid-template-columns:1fr 1fr;}.comp-grid{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -111,6 +142,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
   <div class="header-right">
     <span class="last-updated" id="lastUpdated"></span>
     <button class="refresh-btn" id="addBtn" onclick="toggleAddPanel()" style="display:none;gap:5px">+ Add competitor</button>
+    <button class="refresh-btn" id="scrapeBtn" onclick="runScrapeNow()" style="display:none;gap:5px;background:var(--primary-light);border-color:var(--primary);color:var(--primary-dark)">▶ Scrape now</button>
     <button class="refresh-btn" id="refreshBtn" onclick="loadData()" style="display:none">↻ Refresh</button>
   </div>
 </header>
@@ -191,12 +223,124 @@ function showDashboard() {
   document.getElementById('dashboard').style.display = 'block';
   document.getElementById('refreshBtn').style.display = 'flex';
   document.getElementById('addBtn').style.display = 'flex';
+  document.getElementById('scrapeBtn').style.display = 'flex';
   document.getElementById('footer').style.display = 'block';
   if (CONFIG.client) {
     document.getElementById('headerTitle').textContent = CONFIG.client + ' — Competitor Intelligence';
     document.getElementById('footerText').textContent = `${CONFIG.client} · Offer Watchdog · Pratt Digital · Data refreshed daily at 7am`;
   }
   loadData();
+}
+
+function switchView(view, btn) {
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('view-overview').style.display = view === 'overview' ? 'block' : 'none';
+  document.getElementById('view-timeline').style.display = view === 'timeline' ? 'block' : 'none';
+}
+
+function buildTimeline(competitors, changes) {
+  const DAYS = 14;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // Build day headers
+  const dayHeaders = [];
+  const dayDates = [];
+  for (let i = DAYS-1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dayDates.push(new Date(d));
+    const isToday = i === 0;
+    const label = isToday ? 'Today' : d.toLocaleDateString('en-GB', {day:'numeric',month:'short'});
+    dayHeaders.push(`<div class="timeline-day${isToday?' today':''}">${label}</div>`);
+  }
+
+  // Group changes by competitor
+  const changesByComp = {};
+  (Array.isArray(changes) ? changes : []).forEach(c => {
+    const cid = c.competitor_id;
+    if (!changesByComp[cid]) changesByComp[cid] = [];
+    changesByComp[cid].push(c);
+  });
+
+  // Build rows
+  const rows = competitors.map(comp => {
+    const compChanges = changesByComp[comp.id] || [];
+
+    const cells = dayDates.map((d, i) => {
+      const isToday = i === dayDates.length - 1;
+      // Find changes on this day
+      const dayChanges = compChanges.filter(c => {
+        const cd = new Date(c.detected_at);
+        cd.setHours(0,0,0,0);
+        return cd.getTime() === d.getTime();
+      });
+
+      const dots = dayChanges.map(c => {
+        const dotType = c.change_type === 'sale_started' ? 'sale'
+          : c.change_type === 'new_offer' || c.change_type === 'new_code' ? 'new'
+          : c.change_type === 'shipping_change' ? 'ship' : 'ended';
+        return `<div class="timeline-dot ${dotType}" title="${c.summary}" style="left:${8 + dayChanges.indexOf(c)*10}px"></div>`;
+      }).join('');
+
+      return `<div class="timeline-cell${isToday?' today':''}" style="height:40px;position:relative">
+        ${dots}
+      </div>`;
+    }).join('');
+
+    // Current offer bar — show across recent days if sale active
+    const snap = comp.snapshot;
+    const hasCurrentOffer = snap?.sale_active || (snap?.offers || []).length > 0;
+
+    // Find when current offer started (look back in changes)
+    const saleStart = compChanges.find(c => c.change_type === 'sale_started');
+    const offerLabel = snap?.sale_active ? 'Sale active'
+      : (snap?.offers || [])[0]?.value || '';
+
+    return `<div class="timeline-row">
+      <div class="timeline-label"><span title="${comp.name}">${comp.name}</span></div>
+      <div class="timeline-cells" style="position:relative">
+        ${hasCurrentOffer ? `<div class="timeline-event sale" style="right:0;left:${Math.max(0, (DAYS-7)) * (100/DAYS)}%;top:8px;bottom:8px" title="${offerLabel}">${offerLabel}</div>` : ''}
+        ${cells}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Change log below timeline
+  const recentChanges = (Array.isArray(changes) ? changes : []).slice(0, 20);
+  const changeLog = recentChanges.length ? recentChanges.map(c => {
+    const typeIcon = {sale_started:'🟡', sale_ended:'⚪', new_offer:'🟢', offer_removed:'🔴', shipping_change:'🔵', new_code:'🟣'}[c.change_type] || '⚪';
+    const comp = competitors.find(x => x.id === c.competitor_id);
+    return `<div class="change-item">
+      <div style="font-size:16px;line-height:1;flex-shrink:0;margin-top:2px">${typeIcon}</div>
+      <div>
+        <div class="change-comp">${comp?.name || 'Unknown'}</div>
+        <div class="change-summary">${c.summary}</div>
+        <div class="change-time">${new Date(c.detected_at).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} · ${new Date(c.detected_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">No changes recorded yet — check back after a few daily scans</div>`;
+
+  return `
+    <div class="timeline-wrap">
+      <div class="timeline-head">
+        <span class="timeline-head-title">Offer activity — last ${DAYS} days</span>
+        <span style="font-size:11px;color:var(--muted)">Dots show detected changes · Bars show active offers</span>
+      </div>
+      <div class="timeline-days">${dayHeaders.join('')}</div>
+      ${rows}
+      <div class="tl-legend">
+        <div class="tl-legend-item"><div class="tl-swatch" style="background:var(--amber)"></div>Sale active</div>
+        <div class="tl-legend-item"><div class="tl-swatch" style="background:var(--primary-dark)"></div>New offer</div>
+        <div class="tl-legend-item"><div class="tl-swatch" style="background:var(--muted)"></div>Offer ended</div>
+        <div class="tl-legend-item"><div class="tl-swatch" style="background:var(--green)"></div>Shipping change</div>
+        <div class="tl-legend-item"><div class="tl-swatch" style="background:var(--purple)"></div>New code</div>
+      </div>
+    </div>
+
+    <div class="section-title">Detailed change log</div>
+    <div class="change-feed">${changeLog}</div>`;
 }
 
 async function loadData() {
@@ -306,6 +450,12 @@ function renderDashboard(competitors, changes) {
   }).join('') : `<div class="empty">No changes detected yet — check back after the next daily scan</div>`;
 
   document.getElementById('content').innerHTML = `
+    <div class="view-tabs">
+      <button class="view-tab active" onclick="switchView('overview',this)">Overview</button>
+      <button class="view-tab" onclick="switchView('timeline',this)">Timeline</button>
+    </div>
+
+    <div id="view-overview">
     <div class="summary-grid">
       <div class="summary-card">
         <h4>Competitors tracked</h4>
@@ -335,10 +485,39 @@ function renderDashboard(competitors, changes) {
     <div class="changes-section">
       <div class="section-title">Change history</div>
       <div class="change-feed">${changeItems}</div>
+    </div>
+    </div>
+
+    <div id="view-timeline" style="display:none">
+      ${buildTimeline(competitors, changes)}
     </div>`;
 
   document.getElementById('loadingState').style.display = 'none';
   document.getElementById('content').style.display = 'block';
+}
+
+// ── Manual scrape ────────────────────────────────────────────────────────
+async function runScrapeNow() {
+  const btn = document.getElementById('scrapeBtn');
+  btn.textContent = '⏳ Scraping…';
+  btn.disabled = true;
+  try {
+    await fetch(`${CONFIG.url}/scrape`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': CONFIG.key },
+      body: JSON.stringify({})
+    });
+    btn.textContent = '✓ Done — refreshing…';
+    setTimeout(() => {
+      btn.textContent = '▶ Scrape now';
+      btn.disabled = false;
+      loadData();
+    }, 20000);
+  } catch(e) {
+    btn.textContent = '▶ Scrape now';
+    btn.disabled = false;
+    alert('Scrape failed: ' + e.message);
+  }
 }
 
 // ── Add competitor ────────────────────────────────────────────────────────
