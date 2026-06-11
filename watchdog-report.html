@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Competitor Intelligence — Offer Watchdog</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:#aec90b; --primary-dark:#8aaa00; --primary-light:#f4f9e0;
+  --secondary:#f0a500;
+  --slate:#4c565c; --bg:#f5f4f0; --surface:#fff; --border:#e2e0d8;
+  --text:#1a1a18; --muted:#6b6960;
+  --green:#18a058; --green-light:#e8f7f0;
+  --amber:#f59e0b; --amber-light:#fff7ed;
+  --red:#e24b4a; --red-light:#fdf0f0;
+  --blue:#2d5be3; --blue-light:#eef1fc;
+  --purple:#7c3aed; --purple-light:#f3f0ff;
+  --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"DM Sans",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+header{background:#fff;border-bottom:3px solid var(--primary);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.header-left{display:flex;align-items:center;gap:14px;}
+.header-logo{height:36px;object-fit:contain;}
+.header-divider{width:1px;height:28px;background:var(--border);}
+.header-title{font-size:14px;font-weight:500;color:var(--slate);}
+.header-meta{font-size:11px;color:var(--muted);margin-top:1px;}
+.header-right{display:flex;align-items:center;gap:10px;}
+.last-updated{font-size:11px;color:var(--muted);}
+.refresh-btn{padding:6px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:"DM Sans",sans-serif;font-size:12px;cursor:pointer;color:var(--slate);display:flex;align-items:center;gap:5px;}
+.refresh-btn:hover{background:var(--border);}
+main{max-width:1100px;margin:0 auto;padding:28px 24px;}
+.setup-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;margin:40px auto;}
+.setup-card h2{font-size:18px;font-weight:600;color:var(--slate);margin-bottom:8px;}
+.setup-card p{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6;}
+.field-group{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+.field-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.field-input{padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-family:"DM Sans",sans-serif;font-size:13px;background:var(--bg);color:var(--text);outline:none;}
+.field-input:focus{border-color:var(--primary);}
+.connect-btn{width:100%;padding:10px;background:var(--primary);color:var(--slate);border:none;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;margin-top:6px;}
+.connect-btn:hover{background:var(--primary-dark);}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+.summary-card{background:#fff;border-radius:var(--radius);padding:14px 16px;border:1px solid var(--border);}
+.summary-card h4{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;}
+.summary-card .val{font-size:24px;font-weight:600;color:var(--slate);line-height:1;}
+.summary-card .sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.summary-card.warn .val{color:var(--amber);}
+.summary-card.alert .val{color:var(--red);}
+.summary-card.ok .val{color:var(--green);}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;}
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:28px;}
+.comp-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.comp-card.changed{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber);}
+.comp-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.comp-name{font-size:15px;font-weight:600;color:var(--slate);}
+.comp-url{font-size:11px;color:var(--muted);margin-top:2px;}
+.comp-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:1px;}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;}
+.badge.sale{background:#FAEEDA;color:#633806;}
+.badge.changed{background:var(--amber-light);color:#92400e;}
+.badge.no-change{background:var(--bg);color:var(--muted);}
+.comp-body{padding:14px 16px;}
+.offers-list{display:flex;flex-direction:column;gap:8px;}
+.offer-item{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;background:var(--bg);border-radius:8px;}
+.offer-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;}
+.offer-icon.sale{background:var(--amber-light);}
+.offer-icon.discount{background:var(--blue-light);}
+.offer-icon.bundle{background:var(--purple-light);}
+.offer-icon.shipping{background:var(--green-light);}
+.offer-val{font-size:13px;font-weight:600;color:var(--slate);}
+.offer-desc{font-size:11px;color:var(--muted);margin-top:1px;line-height:1.4;}
+.offer-code{display:inline-block;font-family:"DM Mono",monospace;font-size:10px;background:var(--blue-light);color:var(--blue);padding:1px 6px;border-radius:4px;margin-top:3px;}
+.offer-urgency{font-size:10px;color:var(--red);margin-top:2px;}
+.no-offers{font-size:12px;color:var(--muted);padding:8px 0;font-style:italic;}
+.comp-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg);}
+.comp-shipping{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;}
+.comp-time{font-size:10px;color:var(--muted);}
+.changes-section{margin-bottom:28px;}
+.change-feed{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.change-item{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);}
+.change-item:last-child{border-bottom:none;}
+.change-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+.change-dot.new{background:var(--amber);}
+.change-dot.ended{background:var(--muted);}
+.change-dot.ship{background:var(--green);}
+.change-dot.sale{background:var(--purple);}
+.change-comp{font-size:12px;font-weight:600;color:var(--slate);}
+.change-summary{font-size:12px;color:var(--muted);margin-top:1px;line-height:1.5;}
+.change-time{font-size:10px;color:var(--muted);margin-top:3px;}
+.empty{padding:20px;text-align:center;font-size:13px;color:var(--muted);font-style:italic;}
+.loading{display:flex;align-items:center;justify-content:center;padding:60px;flex-direction:column;gap:14px;color:var(--muted);}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-msg{background:var(--red-light);border:1px solid var(--red);border-radius:var(--radius);padding:16px;font-size:13px;color:var(--red);margin-bottom:20px;}
+footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:20px;}
+@media(max-width:600px){.summary-grid{grid-template-columns:1fr 1fr;}.comp-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <img class="header-logo" id="headerLogo" src="" alt="Logo" style="display:none">
+    <div id="headerDivider" class="header-divider" style="display:none"></div>
+    <div>
+      <div class="header-title" id="headerTitle">Offer Watchdog</div>
+      <div class="header-meta" id="headerMeta">Competitor intelligence</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="last-updated" id="lastUpdated"></span>
+    <button class="refresh-btn" id="refreshBtn" onclick="loadData()" style="display:none">↻ Refresh</button>
+  </div>
+</header>
+
+<main id="main">
+  <!-- Setup screen -->
+  <div id="setupScreen">
+    <div class="setup-card">
+      <h2>Connect to Offer Watchdog</h2>
+      <p>Enter your Railway service URL and API key to view live competitor intelligence.</p>
+      <div class="field-group">
+        <span class="field-label">Railway URL</span>
+        <input class="field-input" id="inputUrl" type="url" placeholder="https://offer-watchdog-production.up.railway.app">
+      </div>
+      <div class="field-group">
+        <span class="field-label">API Key</span>
+        <input class="field-input" id="inputKey" type="password" placeholder="wd-pratt-2024">
+      </div>
+      <div class="field-group">
+        <span class="field-label">Client name (optional — for display)</span>
+        <input class="field-input" id="inputClient" type="text" placeholder="e.g. Auree Jewellery">
+      </div>
+      <button class="connect-btn" onclick="connect()">Connect →</button>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" style="display:none">
+    <div id="errorMsg" class="error-msg" style="display:none"></div>
+    <div id="loadingState" class="loading">
+      <div class="spinner"></div>
+      <div style="font-size:13px">Loading competitor data…</div>
+    </div>
+    <div id="content" style="display:none"></div>
+  </div>
+</main>
+
+<footer id="footer" style="display:none">
+  <span id="footerText">Offer Watchdog · Pratt Digital · Data refreshed daily at 7am</span>
+</footer>
+
+<script>
+let CONFIG = {};
+
+function connect() {
+  const url = document.getElementById('inputUrl').value.trim().replace(/\/+$/, '');
+  const key = document.getElementById('inputKey').value.trim();
+  const client = document.getElementById('inputClient').value.trim();
+  if (!url || !key) { alert('Please enter both URL and API key.'); return; }
+  CONFIG = { url, key, client };
+  try { localStorage.setItem('owConfig', JSON.stringify(CONFIG)); } catch(e) {}
+  showDashboard();
+}
+
+function showDashboard() {
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('refreshBtn').style.display = 'flex';
+  document.getElementById('footer').style.display = 'block';
+  if (CONFIG.client) {
+    document.getElementById('headerTitle').textContent = CONFIG.client + ' — Competitor Intelligence';
+    document.getElementById('footerText').textContent = `${CONFIG.client} · Offer Watchdog · Pratt Digital · Data refreshed daily at 7am`;
+  }
+  loadData();
+}
+
+async function loadData() {
+  document.getElementById('loadingState').style.display = 'flex';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'none';
+
+  try {
+    const [snapsRes, changesRes] = await Promise.all([
+      fetch(`${CONFIG.url}/snapshots/latest`, { headers: { 'x-api-key': CONFIG.key } }),
+      fetch(`${CONFIG.url}/changes?limit=20`, { headers: { 'x-api-key': CONFIG.key } })
+    ]);
+
+    if (!snapsRes.ok) throw new Error(`API error ${snapsRes.status} — check your URL and API key`);
+
+    const competitors = await snapsRes.json();
+    const changes = await changesRes.json();
+
+    renderDashboard(competitors, changes);
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+
+  } catch(e) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorMsg').style.display = 'block';
+    document.getElementById('errorMsg').textContent = 'Could not load data: ' + e.message;
+  }
+}
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(h / 24);
+  if (d > 0) return d + 'd ago';
+  if (h > 0) return h + 'h ago';
+  return 'just now';
+}
+
+function offerIcon(type) {
+  const map = {sale:'🏷', discount:'💰', bundle:'🎁', bogo:'🎁', gift:'🎁', shipping:'🚚'};
+  return map[type] || '💰';
+}
+
+function renderDashboard(competitors, changes) {
+  const now = new Date();
+  const today = now.toDateString();
+  
+  // Summary stats
+  const totalComps = competitors.length;
+  const activeSales = competitors.filter(c => c.snapshot?.sale_active).length;
+  const withOffers = competitors.filter(c => (c.snapshot?.offers || []).length > 0).length;
+  const todayChanges = (Array.isArray(changes) ? changes : []).filter(c => new Date(c.detected_at).toDateString() === today).length;
+
+  // Competitor cards
+  const compCards = competitors.map(comp => {
+    const snap = comp.snapshot;
+    const offers = snap?.offers || [];
+    const changed = (Array.isArray(changes) ? changes : []).some(c => c.competitor_id === comp.id && new Date(c.detected_at).toDateString() === today);
+
+    const offerItems = offers.length ? offers.map(o => `
+      <div class="offer-item">
+        <div class="offer-icon ${o.type==='sale'?'sale':o.type==='bundle'||o.type==='bogo'?'bundle':o.type==='shipping'?'shipping':'discount'}">${offerIcon(o.type)}</div>
+        <div>
+          <div class="offer-val">${o.value || o.description}</div>
+          <div class="offer-desc">${o.description !== o.value ? o.description : ''}</div>
+          ${o.code ? `<span class="offer-code">${o.code}</span>` : ''}
+          ${o.urgency ? `<div class="offer-urgency">⏰ ${o.urgency}</div>` : ''}
+        </div>
+      </div>`).join('') : `<div class="no-offers">No current promotions detected</div>`;
+
+    return `<div class="comp-card${changed?' changed':''}">
+      <div class="comp-header">
+        <div>
+          <div class="comp-name">${comp.name}</div>
+          <div class="comp-url">${comp.url}</div>
+          <div class="comp-badges" style="margin-top:6px">
+            ${snap?.sale_active ? '<span class="badge sale">Sale active</span>' : ''}
+            ${changed ? '<span class="badge changed">Changed today</span>' : '<span class="badge no-change">No change today</span>'}
+          </div>
+        </div>
+        <a href="${comp.url.startsWith('http')?comp.url:'https://'+comp.url}" target="_blank" style="font-size:11px;color:var(--muted);text-decoration:none;white-space:nowrap;padding-top:2px">Visit site ↗</a>
+      </div>
+      <div class="comp-body">
+        <div class="offers-list">${offerItems}</div>
+      </div>
+      <div class="comp-footer">
+        <div class="comp-shipping">
+          ${snap?.shipping_threshold ? `🚚 Free shipping: <strong style="color:var(--slate);margin-left:2px">${snap.shipping_threshold}</strong>` : '<span style="opacity:.6">Shipping threshold not detected</span>'}
+        </div>
+        <div class="comp-time">Scraped ${snap?.scraped_at ? timeAgo(snap.scraped_at) : 'never'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Change feed
+  const changeItems = Array.isArray(changes) && changes.length ? changes.slice(0,10).map(c => {
+    const typeMap = {new_offer:'new', offer_removed:'ended', shipping_change:'ship', sale_started:'sale', sale_ended:'ended', new_code:'new'};
+    const dot = typeMap[c.change_type] || 'new';
+    const compName = c.competitors?.name || 'Unknown';
+    return `<div class="change-item">
+      <div class="change-dot ${dot}"></div>
+      <div>
+        <div class="change-comp">${compName}</div>
+        <div class="change-summary">${c.summary}</div>
+        <div class="change-time">${timeAgo(c.detected_at)}</div>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">No changes detected yet — check back after the next daily scan</div>`;
+
+  document.getElementById('content').innerHTML = `
+    <div class="summary-grid">
+      <div class="summary-card">
+        <h4>Competitors tracked</h4>
+        <div class="val">${totalComps}</div>
+        <div class="sub">Active monitoring</div>
+      </div>
+      <div class="summary-card ${todayChanges > 0 ? 'warn' : 'ok'}">
+        <h4>Changes today</h4>
+        <div class="val">${todayChanges}</div>
+        <div class="sub">${todayChanges > 0 ? 'Requires attention' : 'All quiet'}</div>
+      </div>
+      <div class="summary-card ${activeSales > 0 ? 'warn' : ''}">
+        <h4>Active sales</h4>
+        <div class="val">${activeSales}</div>
+        <div class="sub">of ${totalComps} competitors</div>
+      </div>
+      <div class="summary-card">
+        <h4>With offers</h4>
+        <div class="val">${withOffers}</div>
+        <div class="sub">Running promotions</div>
+      </div>
+    </div>
+
+    <div class="section-title">Current competitor offers</div>
+    <div class="comp-grid">${compCards}</div>
+
+    <div class="changes-section">
+      <div class="section-title">Change history</div>
+      <div class="change-feed">${changeItems}</div>
+    </div>`;
+
+  document.getElementById('loadingState').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+}
+
+// Auto-load saved config
+window.addEventListener('load', () => {
+  // Load branding from shared localStorage
+  try {
+    const s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    if (s.logo) {
+      document.getElementById('headerLogo').src = s.logo;
+      document.getElementById('headerLogo').style.display = 'block';
+      document.getElementById('headerDivider').style.display = 'block';
+    }
+  } catch(e) {}
+
+  // Load saved connection config
+  try {
+    const saved = JSON.parse(localStorage.getItem('owConfig') || '{}');
+    if (saved.url && saved.key) {
+      CONFIG = saved;
+      document.getElementById('inputUrl').value = saved.url;
+      document.getElementById('inputKey').value = saved.key;
+      if (saved.client) document.getElementById('inputClient').value = saved.client;
+      showDashboard();
+    }
+  } catch(e) {}
+});
+</script>
+</body>
+</html>
