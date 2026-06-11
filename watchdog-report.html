@@ -110,10 +110,32 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
   </div>
   <div class="header-right">
     <span class="last-updated" id="lastUpdated"></span>
+    <button class="refresh-btn" id="addBtn" onclick="toggleAddPanel()" style="display:none;gap:5px">+ Add competitor</button>
     <button class="refresh-btn" id="refreshBtn" onclick="loadData()" style="display:none">↻ Refresh</button>
   </div>
 </header>
 
+<div id="addPanel" style="display:none;background:#fff;border-bottom:1px solid var(--border);padding:16px 32px;">
+  <div style="max-width:700px;margin:0 auto">
+    <div style="font-size:13px;font-weight:600;color:var(--slate);margin-bottom:12px">Add a competitor to monitor</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end">
+      <div class="field-group" style="margin:0">
+        <span class="field-label">Name</span>
+        <input class="field-input" id="newName" type="text" placeholder="e.g. Monica Vinader">
+      </div>
+      <div class="field-group" style="margin:0">
+        <span class="field-label">Homepage URL</span>
+        <input class="field-input" id="newUrl" type="url" placeholder="https://competitor.com">
+      </div>
+      <div class="field-group" style="margin:0">
+        <span class="field-label">Sale/category page (optional)</span>
+        <input class="field-input" id="newCatUrl" type="url" placeholder="https://competitor.com/sale">
+      </div>
+      <button class="connect-btn" onclick="addCompetitor()" style="width:auto;padding:9px 20px;margin:0">Add →</button>
+    </div>
+    <div id="addStatus" style="font-size:12px;margin-top:8px;color:var(--muted)"></div>
+  </div>
+</div>
 <main id="main">
   <!-- Setup screen -->
   <div id="setupScreen">
@@ -168,6 +190,7 @@ function showDashboard() {
   document.getElementById('setupScreen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
   document.getElementById('refreshBtn').style.display = 'flex';
+  document.getElementById('addBtn').style.display = 'flex';
   document.getElementById('footer').style.display = 'block';
   if (CONFIG.client) {
     document.getElementById('headerTitle').textContent = CONFIG.client + ' — Competitor Intelligence';
@@ -318,7 +341,66 @@ function renderDashboard(competitors, changes) {
   document.getElementById('content').style.display = 'block';
 }
 
-// Auto-load saved config
+// ── Add competitor ────────────────────────────────────────────────────────
+function toggleAddPanel() {
+  const panel = document.getElementById('addPanel');
+  const btn = document.getElementById('addBtn');
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '✕ Cancel' : '+ Add competitor';
+}
+
+async function addCompetitor() {
+  const name = document.getElementById('newName').value.trim();
+  const url  = document.getElementById('newUrl').value.trim();
+  const catUrl = document.getElementById('newCatUrl').value.trim();
+  const status = document.getElementById('addStatus');
+
+  if (!name || !url) { status.textContent = 'Please enter a name and homepage URL.'; status.style.color = 'var(--red)'; return; }
+
+  // Need client_id — fetch it from the snapshots endpoint
+  // (we stored it when connecting — or fetch the first competitor's client_id)
+  status.textContent = 'Adding…'; status.style.color = 'var(--muted)';
+
+  try {
+    // Get client_id from existing competitors
+    const snap = await fetch(`${CONFIG.url}/snapshots/latest`, { headers: { 'x-api-key': CONFIG.key } });
+    const comps = await snap.json();
+    const clientId = comps?.[0]?.client_id;
+    if (!clientId) throw new Error('No existing competitors found — add a client via Supabase first');
+
+    const res = await fetch(`${CONFIG.url}/competitors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': CONFIG.key },
+      body: JSON.stringify({ client_id: clientId, name, url, category_url: catUrl || null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to add competitor');
+
+    status.textContent = `✓ ${name} added successfully — will be scraped in the next daily run, or click Run now below.`;
+    status.style.color = 'var(--green)';
+    document.getElementById('newName').value = '';
+    document.getElementById('newUrl').value = '';
+    document.getElementById('newCatUrl').value = '';
+
+    // Trigger an immediate scrape for this new competitor
+    await fetch(`${CONFIG.url}/scrape`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': CONFIG.key },
+      body: JSON.stringify({})
+    });
+    status.textContent += ' Scraping now…';
+
+    // Reload data after 15 seconds
+    setTimeout(() => { loadData(); toggleAddPanel(); }, 15000);
+
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+// ── Auto-load saved config
 window.addEventListener('load', () => {
   // Load branding from shared localStorage
   try {
