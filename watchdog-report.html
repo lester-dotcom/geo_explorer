@@ -293,15 +293,33 @@ function buildTimeline(competitors, changes) {
     const snap = comp.snapshot;
     const hasCurrentOffer = snap?.sale_active || (snap?.offers || []).length > 0;
 
-    // Find when current offer started (look back in changes)
-    const saleStart = compChanges.find(c => c.change_type === 'sale_started');
     const offerLabel = snap?.sale_active ? 'Sale active'
       : (snap?.offers || [])[0]?.value || '';
+
+    // Find earliest snapshot/change date for this competitor
+    // Only draw bar from when we first have data
+    const firstSeen = compChanges.length
+      ? new Date(compChanges[compChanges.length-1].detected_at)
+      : (snap?.scraped_at ? new Date(snap.scraped_at) : null);
+
+    let barLeft = '100%'; // default: no bar
+    if (hasCurrentOffer && firstSeen) {
+      firstSeen.setHours(0,0,0,0);
+      // Find which day index this corresponds to
+      const dayIdx = dayDates.findIndex(d => d.getTime() === firstSeen.getTime());
+      if (dayIdx >= 0) {
+        barLeft = (dayIdx * (100/DAYS)) + '%';
+      } else if (firstSeen <= dayDates[0]) {
+        // Started before our window — show from start
+        barLeft = '0%';
+      }
+      // If firstSeen is after our window, don't show bar
+    }
 
     return `<div class="timeline-row">
       <div class="timeline-label"><span title="${comp.name}">${comp.name}</span></div>
       <div class="timeline-cells" style="position:relative">
-        ${hasCurrentOffer ? `<div class="timeline-event sale" style="right:0;left:${Math.max(0, (DAYS-7)) * (100/DAYS)}%;top:8px;bottom:8px" title="${offerLabel}">${offerLabel}</div>` : ''}
+        ${hasCurrentOffer && barLeft !== '100%' ? `<div class="timeline-event sale" style="right:0;left:${barLeft};top:8px;bottom:8px" title="${offerLabel}">${offerLabel}</div>` : ''}
         ${cells}
       </div>
     </div>`;
