@@ -447,7 +447,15 @@ function renderDashboard(competitors, changes) {
     const offers = snap?.offers || [];
     const changed = (Array.isArray(changes) ? changes : []).some(c => c.competitor_id === comp.id && new Date(c.detected_at).toDateString() === today);
 
-    const offerItems = offers.length ? offers.map(o => `
+    // Deduplicate offers by value similarity
+    const seenOffers = new Set();
+    const dedupedOffers = offers.filter(o => {
+      const key = (o.value || o.description || '').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,20);
+      if (seenOffers.has(key)) return false;
+      seenOffers.add(key);
+      return true;
+    });
+    const offerItems = dedupedOffers.length ? dedupedOffers.map(o => `
       <div class="offer-item">
         <div class="offer-icon ${o.type==='sale'?'sale':o.type==='bundle'||o.type==='bogo'?'bundle':o.type==='shipping'?'shipping':'discount'}">${offerIcon(o.type)}</div>
         <div>
