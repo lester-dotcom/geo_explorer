@@ -366,6 +366,10 @@ footer {
           <div class="logo-upload-text" id="logoUploadText">📂 Upload logo (PNG, JPG, SVG)<br><span style="font-size:10px;opacity:.7">Recommended: max 200px tall</span></div>
         </label>
         <button class="btn-reset" style="font-size:11px;padding:6px 10px;margin-top:4px" onclick="resetLogo()">↺ Reset to default logo</button>
+        <div style="margin-top:10px">
+          <div class="settings-label" style="margin-bottom:4px">Logo URL <span style="font-weight:400;opacity:.65;font-size:10px">(use this for shareable links — paste your hosted logo URL)</span></div>
+          <input class="settings-input" id="inputLogoUrl" type="url" placeholder="https://yoursite.com/logo.png" style="font-size:12px">
+        </div>
       </div>
 
       <div class="settings-section">
@@ -407,6 +411,7 @@ footer {
     </div>
     <div class="settings-footer">
       <button class="btn-save" onclick="saveSettings()">Save &amp; apply</button>
+      <button id="shareBtn" class="btn-share" onclick="copyShareableLink()">🔗 Copy shareable link</button>
       <button class="btn-reset" onclick="resetAll()">Reset all</button>
     </div>
   </div>
@@ -463,7 +468,17 @@ window.addEventListener('load', () => {
   });
 });
 
+// ── URL brand param helpers ───────────────────────────────────────────────
+function getBrandFromUrl() {
+  try {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    return b ? JSON.parse(atob(b)) : null;
+  } catch(e) { return null; }
+}
+
 function loadSettings() {
+  const fromUrl = getBrandFromUrl();
+  if (fromUrl) return fromUrl;
   try {
     const s = localStorage.getItem('geoSuiteSettings');
     return s ? JSON.parse(s) : {};
@@ -475,7 +490,7 @@ function applySettings(s) {
   const primary   = s.primary   || DEFAULT_PRIMARY;
   const secondary = s.secondary || DEFAULT_SECONDARY;
   const name      = s.name      || DEFAULT_NAME;
-  const logo      = s.logo      || DEFAULT_LOGO;
+  const logo      = s.logoUrl   || s.logo || DEFAULT_LOGO;
 
   root.style.setProperty('--primary',      primary);
   root.style.setProperty('--primary-dark', darken(primary, 15));
@@ -494,7 +509,8 @@ function populateForm(s) {
   const name      = s.name      || DEFAULT_NAME;
   const logo      = s.logo      || DEFAULT_LOGO;
 
-  document.getElementById('inputName').value = name;
+  document.getElementById('inputName').value    = name;
+  document.getElementById('inputLogoUrl').value = s.logoUrl || '';
   document.getElementById('colourPrimary').value   = primary;
   document.getElementById('colourSecondary').value = secondary;
   document.getElementById('hexPrimary').textContent   = primary;
@@ -504,24 +520,25 @@ function populateForm(s) {
 
   const preview = document.getElementById('logoPreview');
   preview.src = logo; preview.classList.add('visible');
-  document.getElementById('previewLogo').src = logo;
+  document.getElementById('previewLogo').src = s.logoUrl || logo;
   if (logo !== DEFAULT_LOGO) {
     document.getElementById('logoUploadText').style.display = 'none';
   }
 }
 
 function saveSettings() {
-  const logo = document.getElementById('logoPreview').src;
+  const logo    = document.getElementById('logoPreview').src;
+  const logoUrl = document.getElementById('inputLogoUrl').value.trim();
   const settings = {
     name:      document.getElementById('inputName').value || DEFAULT_NAME,
     primary:   document.getElementById('colourPrimary').value,
     secondary: document.getElementById('colourSecondary').value,
     logo:      logo.startsWith('data:') ? logo : DEFAULT_LOGO,
+    logoUrl:   logoUrl,
   };
   try {
     localStorage.setItem('geoSuiteSettings', JSON.stringify(settings));
   } catch(e) {
-    // Logo might be too large for localStorage — store without logo
     const small = {...settings, logo: DEFAULT_LOGO};
     localStorage.setItem('geoSuiteSettings', JSON.stringify(small));
     alert('Logo may be too large to save — colours and name saved. Try a smaller logo file.');
@@ -549,6 +566,55 @@ function resetAll() {
 function openSettings()  { document.getElementById('settingsOverlay').classList.add('open'); }
 function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
 function closeSettingsIfOutside(e) { if (e.target === document.getElementById('settingsOverlay')) closeSettings(); }
+
+// ── Shareable link (URL-encoded branding + is.gd shortening) ─────────────
+async function copyShareableLink() {
+  const logoUrl = document.getElementById('inputLogoUrl').value.trim();
+  const logo    = document.getElementById('logoPreview').src;
+
+  const settings = {
+    name:      document.getElementById('inputName').value || DEFAULT_NAME,
+    primary:   document.getElementById('colourPrimary').value,
+    secondary: document.getElementById('colourSecondary').value,
+  };
+  if (logoUrl) {
+    settings.logoUrl = logoUrl;
+  } else if (logo.startsWith('data:') && logo !== DEFAULT_LOGO) {
+    const go = confirm(
+      'Your uploaded logo is too large to include in a shareable link.\n\n' +
+      'To include your logo, paste a URL to your hosted logo (e.g. from your website) ' +
+      'into the "Logo URL" field.\n\nCopy link anyway without the logo?'
+    );
+    if (!go) return;
+  }
+
+  const base    = window.location.origin + window.location.pathname;
+  const longUrl = base + '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(settings))));
+
+  const btn = document.getElementById('shareBtn');
+  btn.textContent = '⏳ Shortening…';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('https://is.gd/create.php?format=json&url=' + encodeURIComponent(longUrl));
+    const data = await resp.json();
+    if (!data.shorturl) throw new Error('no shorturl');
+    await navigator.clipboard.writeText(data.shorturl);
+    btn.textContent = '✓ Link copied!';
+    setTimeout(() => { btn.textContent = '🔗 Copy shareable link'; btn.disabled = false; }, 3000);
+  } catch(e) {
+    // Fallback: copy the long URL or show a prompt
+    try {
+      await navigator.clipboard.writeText(longUrl);
+      btn.textContent = '✓ Link copied (full URL)';
+    } catch(e2) {
+      prompt('Copy this branded link:', longUrl);
+      btn.textContent = '🔗 Copy shareable link';
+      btn.disabled = false;
+    }
+    setTimeout(() => { btn.textContent = '🔗 Copy shareable link'; btn.disabled = false; }, 3000);
+  }
+}
 
 // Colour helpers
 function darken(hex, pct) {
@@ -589,10 +655,17 @@ function lighten(hex, pct) {
 function loadTool(filename, event) {
   if (event) event.preventDefault();
 
+  // Build brand param from current settings so the tool inherits branding
+  const s = loadSettings();
+  const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
+  if (s.logoUrl) brand.logoUrl = s.logoUrl;
+  const brandParam = '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(brand))));
+  const toolUrl = filename + brandParam;
+
   // When running locally (file://) iframes are blocked by browser security
   // Fall back to opening in a new tab
   if (window.location.protocol === 'file:') {
-    window.open(filename, '_blank');
+    window.open(toolUrl, '_blank');
     return;
   }
 
@@ -604,6 +677,8 @@ function loadTool(filename, event) {
 
   title.textContent = filename === 'overlap-map.html'
     ? 'Customer & Location Mapper'
+    : filename === 'customer-map.html'
+    ? 'Customer Location Mapper'
     : 'Profile & Lookalike Finder';
 
   logo.src = document.getElementById('headerLogo').src;
@@ -617,7 +692,7 @@ function loadTool(filename, event) {
     loading.style.display = 'none';
     frame.style.display   = 'flex';
   };
-  frame.src = filename;
+  frame.src = toolUrl;
 }
 
 function closeTool() {

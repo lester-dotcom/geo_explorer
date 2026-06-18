@@ -1,7 +1,14 @@
-// ── Branding (reads from launcher geoSuiteSettings) ──────────────────────
+// ── Branding (URL ?brand= param takes priority over localStorage) ──────────
 (function applyBranding() {
   try {
-    const s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    let s = {};
+    try {
+      const b = new URLSearchParams(window.location.search).get('brand');
+      if (b) s = JSON.parse(decodeURIComponent(escape(atob(b))));
+    } catch(e) {}
+    if (!s.name && !s.primary) {
+      s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    }
     if (s.primary) {
       document.documentElement.style.setProperty('--pd-green', s.primary);
       document.documentElement.style.setProperty('--pd-green-dark', s.primary);
@@ -16,9 +23,10 @@
       if (h1) h1.textContent = s.name + ' · Profile & Lookalike Finder';
       document.title = document.title.replace('Pratt Digital', s.name);
     }
-    if (s.logo) {
+    const logoSrc = s.logoUrl || s.logo;
+    if (logoSrc) {
       const img = document.querySelector('header .header-logo');
-      if (img) img.src = s.logo;
+      if (img) img.src = logoSrc;
     }
   } catch(e) {}
 })();

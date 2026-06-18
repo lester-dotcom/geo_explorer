@@ -240,10 +240,17 @@ textarea::placeholder { color: var(--muted); }
 </script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
-  // ── Branding (reads from launcher geoSuiteSettings) ──────────────────────
+  // ── Branding (URL ?brand= param takes priority over localStorage) ──────────
 (function applyBranding() {
   try {
-    const s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    let s = {};
+    try {
+      const b = new URLSearchParams(window.location.search).get('brand');
+      if (b) s = JSON.parse(decodeURIComponent(escape(atob(b))));
+    } catch(e) {}
+    if (!s.name && !s.primary) {
+      s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    }
     if (s.primary) {
       document.documentElement.style.setProperty('--pd-green', s.primary);
       document.documentElement.style.setProperty('--pd-green-dark', s.primary);
@@ -258,9 +265,10 @@ textarea::placeholder { color: var(--muted); }
       if (h1) h1.textContent = s.name + ' · Location Overlap Mapper';
       document.title = document.title.replace('Pratt Digital', s.name);
     }
-    if (s.logo) {
+    const logoSrc = s.logoUrl || s.logo;
+    if (logoSrc) {
       const img = document.querySelector('header .header-logo');
-      if (img) img.src = s.logo;
+      if (img) img.src = logoSrc;
     }
   } catch(e) {}
 })();
@@ -827,13 +835,19 @@ function exportAll() {
 function generateOverlapBrief() {
   if (!cResult.length && !lResult.length) { alert('Run analysis first.'); return; }
 
-  // Branding from localStorage
+  // Branding: URL ?brand= param takes priority over localStorage
   let branding = {};
-  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  try {
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b) branding = JSON.parse(decodeURIComponent(escape(atob(b))));
+    if (!branding.name && !branding.primary) {
+      branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    }
+  } catch(e) {}
   const agencyName = branding.name      || 'Pratt Digital';
   const primary    = branding.primary   || '#aec90b';
   const secondary  = branding.secondary || '#f0a500';
-  const logoSrc    = branding.logo      || '';
+  const logoSrc    = branding.logoUrl   || branding.logo || '';
 
   function darken(hex, pct) {
     const n=parseInt(hex.slice(1),16),f=1-pct/100;
