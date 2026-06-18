@@ -367,9 +367,11 @@ footer {
         </label>
         <button class="btn-reset" style="font-size:11px;padding:6px 10px;margin-top:4px" onclick="resetLogo()">↺ Reset to default logo</button>
         <div style="margin-top:10px">
-          <div class="settings-label" style="margin-bottom:4px">Logo URL <span style="font-weight:400;opacity:.65;font-size:10px">(use this for shareable links — paste your hosted logo URL)</span></div>
-          <input class="settings-input" id="inputLogoUrl" type="url" placeholder="https://yoursite.com/logo.png" style="font-size:12px">
+          <div class="settings-label" style="margin-bottom:4px;color:#92580a">🔗 Logo URL — needed for logo to appear on shared links</div>
+          <input class="settings-input" id="inputLogoUrl" type="url" placeholder="https://yoursite.com/logo.png" style="font-size:12px;margin-bottom:6px">
+          <div style="font-size:10px;color:#92580a;line-height:1.6">Uploaded logos only show on <em>your</em> browser. Paste a URL here so it travels with the link.<br><strong>Quick way:</strong> right-click your logo on your website → <em>Copy image address</em>.</div>
         </div>
+        <div style="margin-top:4px;background:#fffbe6;border:1px solid #f0a500;border-radius:6px;padding:8px 10px;font-size:10px;color:#92580a;line-height:1.5">
       </div>
 
       <div class="settings-section">
@@ -695,11 +697,18 @@ function loadTool(filename, event) {
   frame.style.display    = 'none';
   document.body.style.overflow = 'hidden';
 
+  // Pass brand via window.name BEFORE setting src — available instantly in the tool
+  // regardless of how long scripts take to load (no timing dependency)
+  const s = loadSettings();
+  const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
+  if (s.logoUrl) brand.logoUrl = s.logoUrl;
+  if (s.logo && s.logo.startsWith('data:') && s.logo !== DEFAULT_LOGO) brand.logo = s.logo;
+  try { frame.contentWindow.name = JSON.stringify(brand); } catch(e) {}
+
   frame.onload = () => {
     loading.style.display = 'none';
     frame.style.display   = 'flex';
-    // Push full branding into the tool via postMessage — no URL length limits
-    const s = loadSettings();
+    // Belt-and-suspenders: also send via postMessage after load
     frame.contentWindow.postMessage({ type: 'geoSuiteBrand', settings: s }, '*');
   };
   frame.src = filename;  // clean URL, no params

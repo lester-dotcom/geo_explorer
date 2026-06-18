@@ -64,6 +64,34 @@
 
 
 <script>
+// ── Early branding from window.name (set by launcher before iframe src) ──
+(function() {
+  try {
+    const b = window.name ? JSON.parse(window.name) : null;
+    if (!b || (!b.name && !b.primary)) return;
+    if (b.primary) {
+      document.documentElement.style.setProperty('--pd-green', b.primary);
+      document.documentElement.style.setProperty('--pd-green-dark', b.primary);
+      document.documentElement.style.setProperty('--pd-green-light', b.primary + '26');
+    }
+    if (b.secondary) {
+      document.documentElement.style.setProperty('--pd-slate', b.secondary);
+      document.documentElement.style.setProperty('--pd-slate-dark', b.secondary);
+    }
+    if (b.name) {
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = b.name + ' · Profile & Lookalike Finder';
+      document.title = document.title.replace('Pratt Digital', b.name);
+    }
+    const logoSrc = b.logoUrl || b.logo || '';
+    if (logoSrc) {
+      const img = document.querySelector('header .header-logo');
+      if (img) img.src = logoSrc;
+    }
+    window._geoSuiteBrand = b; // cache for generateBrief()
+  } catch(e) {}
+})();
+
 // ── Brief generator ──────────────────────────────────────────────────────
 function generateBrief() {
   if (!profileData) { alert('Run analysis first.'); return; }
