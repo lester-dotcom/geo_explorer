@@ -240,6 +240,30 @@ textarea::placeholder { color: var(--muted); }
 </script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
+  // ── Branding (reads from launcher geoSuiteSettings) ──────────────────────
+(function applyBranding() {
+  try {
+    const s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    if (s.primary) {
+      document.documentElement.style.setProperty('--pd-green', s.primary);
+      document.documentElement.style.setProperty('--pd-green-dark', s.primary);
+      document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
+    }
+    if (s.secondary) {
+      document.documentElement.style.setProperty('--pd-slate', s.secondary);
+      document.documentElement.style.setProperty('--pd-slate-dark', s.secondary);
+    }
+    if (s.name) {
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = s.name + ' · Location Overlap Mapper';
+      document.title = document.title.replace('Pratt Digital', s.name);
+    }
+    if (s.logo) {
+      const img = document.querySelector('header .header-logo');
+      if (img) img.src = s.logo;
+    }
+  } catch(e) {}
+})();
 let map;
 let cData = [], lData = [];       // parsed postcode rows
 let cResult = [], lResult = [];   // geocoded results
