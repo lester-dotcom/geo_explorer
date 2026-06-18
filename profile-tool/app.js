@@ -23,7 +23,10 @@
       if (h1) h1.textContent = s.name + ' · Profile & Lookalike Finder';
       document.title = document.title.replace('Pratt Digital', s.name);
     }
-    const logoSrc = s.logoUrl || s.logo;
+    // Logo: logoUrl travels in URL; base64 logo falls back to localStorage
+    const logoSrc = s.logoUrl || (() => {
+      try { return JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}').logo || ''; } catch(e) { return ''; }
+    })();
     if (logoSrc) {
       const img = document.querySelector('header .header-logo');
       if (img) img.src = logoSrc;
