@@ -452,17 +452,27 @@ window.addEventListener('load', () => {
   document.getElementById('inputName').addEventListener('input', function() {
     document.getElementById('previewName').textContent = this.value || DEFAULT_NAME;
   });
-  // Logo file upload
+  // Logo file upload — compress to ≤200px tall, 70% JPEG so it fits in shareable URLs
   document.getElementById('logoFileInput').addEventListener('change', function() {
     const file = this.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      const src = e.target.result;
-      const preview = document.getElementById('logoPreview');
-      preview.src = src; preview.classList.add('visible');
-      document.getElementById('previewLogo').src = src;
-      document.getElementById('logoUploadText').style.display = 'none';
-      document.getElementById('logoUploadLabel').style.borderStyle = 'solid';
+      const img = new Image();
+      img.onload = () => {
+        const MAX_H = 200;
+        const scale = img.height > MAX_H ? MAX_H / img.height : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.70);
+        const preview = document.getElementById('logoPreview');
+        preview.src = compressed; preview.classList.add('visible');
+        document.getElementById('previewLogo').src = compressed;
+        document.getElementById('logoUploadText').style.display = 'none';
+        document.getElementById('logoUploadLabel').style.borderStyle = 'solid';
+      };
+      img.src = e.target.result;
     };
     reader.readAsDataURL(file);
   });
