@@ -669,6 +669,8 @@ function loadTool(filename, event) {
   const s = loadSettings();
   const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
   if (s.logoUrl) brand.logoUrl = s.logoUrl;
+  // Include compressed logo if it's a custom one (not the default Pratt Digital logo)
+  if (s.logo && s.logo.startsWith('data:') && s.logo !== DEFAULT_LOGO) brand.logo = s.logo;
   const brandParam = '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(brand))));
   const toolUrl = filename + brandParam;
 
