@@ -665,18 +665,14 @@ function lighten(hex, pct) {
 function loadTool(filename, event) {
   if (event) event.preventDefault();
 
-  // Build brand param from current settings so the tool inherits branding
-  // Only text values go in the URL — base64 logos are too large for URLs
-  const s = loadSettings();
-  const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
-  if (s.logoUrl) brand.logoUrl = s.logoUrl;
-  const brandParam = '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(brand))));
-  const toolUrl = filename + brandParam;
-
   // When running locally (file://) iframes are blocked by browser security
-  // Fall back to opening in a new tab
+  // Fall back to opening in a new tab with brand in URL
   if (window.location.protocol === 'file:') {
-    window.open(toolUrl, '_blank');
+    const s = loadSettings();
+    const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
+    if (s.logoUrl) brand.logoUrl = s.logoUrl;
+    const param = '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(brand))));
+    window.open(filename + param, '_blank');
     return;
   }
 
@@ -702,8 +698,11 @@ function loadTool(filename, event) {
   frame.onload = () => {
     loading.style.display = 'none';
     frame.style.display   = 'flex';
+    // Push full branding into the tool via postMessage — no URL length limits
+    const s = loadSettings();
+    frame.contentWindow.postMessage({ type: 'geoSuiteBrand', settings: s }, '*');
   };
-  frame.src = toolUrl;
+  frame.src = filename;  // clean URL, no params
 }
 
 function closeTool() {

@@ -1,38 +1,47 @@
-// ── Branding (URL ?brand= param takes priority over localStorage) ──────────
-(function applyBranding() {
+// ── Branding: postMessage (iframe) → ?brand= URL param → localStorage ────
+function applyBrandSettings(s) {
+  if (!s) return;
+  if (s.primary) {
+    document.documentElement.style.setProperty('--pd-green', s.primary);
+    document.documentElement.style.setProperty('--pd-green-dark', s.primary);
+    document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
+  }
+  if (s.secondary) {
+    document.documentElement.style.setProperty('--pd-slate', s.secondary);
+    document.documentElement.style.setProperty('--pd-slate-dark', s.secondary);
+  }
+  if (s.name) {
+    const h1 = document.querySelector('header h1');
+    if (h1) h1.textContent = s.name + ' · Profile & Lookalike Finder';
+    document.title = document.title.replace('Pratt Digital', s.name);
+  }
+  const logoSrc = s.logoUrl || s.logo || '';
+  if (logoSrc) {
+    const img = document.querySelector('header .header-logo');
+    if (img) img.src = logoSrc;
+  }
+}
+
+// Apply on load from URL param or localStorage
+(function() {
+  let s = {};
   try {
-    let s = {};
-    try {
-      const b = new URLSearchParams(window.location.search).get('brand');
-      if (b) s = JSON.parse(decodeURIComponent(escape(atob(b))));
-    } catch(e) {}
-    if (!s.name && !s.primary) {
-      s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
-    }
-    if (s.primary) {
-      document.documentElement.style.setProperty('--pd-green', s.primary);
-      document.documentElement.style.setProperty('--pd-green-dark', s.primary);
-      document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
-    }
-    if (s.secondary) {
-      document.documentElement.style.setProperty('--pd-slate', s.secondary);
-      document.documentElement.style.setProperty('--pd-slate-dark', s.secondary);
-    }
-    if (s.name) {
-      const h1 = document.querySelector('header h1');
-      if (h1) h1.textContent = s.name + ' · Profile & Lookalike Finder';
-      document.title = document.title.replace('Pratt Digital', s.name);
-    }
-    // Logo: logoUrl travels in URL; base64 logo falls back to localStorage
-    const logoSrc = s.logoUrl || (() => {
-      try { return JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}').logo || ''; } catch(e) { return ''; }
-    })();
-    if (logoSrc) {
-      const img = document.querySelector('header .header-logo');
-      if (img) img.src = logoSrc;
-    }
+    const b = new URLSearchParams(window.location.search).get('brand');
+    if (b) s = JSON.parse(decodeURIComponent(escape(atob(b))));
   } catch(e) {}
+  if (!s.name && !s.primary) {
+    try { s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  }
+  applyBrandSettings(s);
 })();
+
+// Override when launched from the launcher iframe (postMessage carries full settings incl. logo)
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'geoSuiteBrand') {
+    window._geoSuiteBrand = e.data.settings; // cache for generateBrief()
+    applyBrandSettings(e.data.settings);
+  }
+});
 // ── District data (IMD decile, house price band 1-10, rural 0/1, region) ──
 
 // House price band descriptions
