@@ -144,22 +144,23 @@ header h1{font-size:14px;font-weight:400;color:var(--muted);}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Brand definitions ───────────────────────────────────────────────────────
+// brand:wikidata is the most reliable tag in OSM — consistent across name variations
 const BRANDS = [
-  { id:'waitrose',   name:'Waitrose',       group:'Grocery — Premium',   color:'#2d7d2d', query:'["name"~"Waitrose",i]' },
-  { id:'ms_food',    name:'M&S Food',       group:'Grocery — Premium',   color:'#1a1a6e', query:'["brand"="Marks & Spencer"]["shop"="supermarket"]' },
-  { id:'sainsburys', name:'Sainsbury\'s',   group:'Grocery — Mid',       color:'#f07800', query:'["brand"="Sainsbury\'s"]["shop"~"supermarket|convenience"]' },
-  { id:'tesco',      name:'Tesco',          group:'Grocery — Mid',       color:'#e31e24', query:'["brand"="Tesco"]["shop"~"supermarket|convenience"]' },
-  { id:'whole_foods',name:'Whole Foods',    group:'Grocery — Premium',   color:'#00674b', query:'["name"~"Whole Foods",i]' },
-  { id:'aldi',       name:'Aldi',           group:'Grocery — Value',     color:'#1e3a6e', query:'["brand"="Aldi"]["shop"="supermarket"]' },
-  { id:'lidl',       name:'Lidl',           group:'Grocery — Value',     color:'#0050aa', query:'["brand"="Lidl"]["shop"="supermarket"]' },
-  { id:'john_lewis', name:'John Lewis',     group:'Department Store',    color:'#1a5276', query:'["name"~"John Lewis",i]["shop"]' },
-  { id:'next',       name:'Next',           group:'Department Store',    color:'#2c2c2c', query:'["brand"="Next"]["shop"="clothes"]' },
-  { id:'pret',       name:'Pret A Manger',  group:'Coffee & Food',       color:'#8b1a1a', query:'["brand"="Pret A Manger"]' },
-  { id:'costa',      name:'Costa Coffee',   group:'Coffee & Food',       color:'#6b2d1e', query:'["brand"="Costa Coffee"]' },
-  { id:'starbucks',  name:'Starbucks',      group:'Coffee & Food',       color:'#006241', query:'["brand"="Starbucks"]' },
-  { id:'pure_gym',   name:'PureGym',        group:'Fitness',             color:'#ff6600', query:'["brand"="PureGym"]' },
-  { id:'david_lloyd',name:'David Lloyd',    group:'Fitness',             color:'#003366', query:'["name"~"David Lloyd",i]' },
-  { id:'bq',         name:'B&Q',            group:'Home & DIY',          color:'#f4a300', query:'["brand"="B&Q"]' },
+  { id:'waitrose',   name:'Waitrose',       group:'Grocery — Premium',   color:'#2d7d2d', query:'["brand:wikidata"="Q1138191"]' },
+  { id:'ms_food',    name:'M&S Food',       group:'Grocery — Premium',   color:'#1a1a6e', query:'["brand:wikidata"="Q714491"]["shop"]' },
+  { id:'sainsburys', name:'Sainsbury\'s',   group:'Grocery — Mid',       color:'#f07800', query:'["brand:wikidata"="Q582347"]' },
+  { id:'tesco',      name:'Tesco',          group:'Grocery — Mid',       color:'#e31e24', query:'["brand:wikidata"="Q487494"]' },
+  { id:'whole_foods',name:'Whole Foods',    group:'Grocery — Premium',   color:'#00674b', query:'["brand:wikidata"="Q7866848"]' },
+  { id:'aldi',       name:'Aldi',           group:'Grocery — Value',     color:'#1e3a6e', query:'["brand:wikidata"="Q125054"]' },
+  { id:'lidl',       name:'Lidl',           group:'Grocery — Value',     color:'#0050aa', query:'["brand:wikidata"="Q151954"]' },
+  { id:'john_lewis', name:'John Lewis',     group:'Department Store',    color:'#1a5276', query:'["brand:wikidata"="Q1642376"]' },
+  { id:'next',       name:'Next',           group:'Department Store',    color:'#2c2c2c', query:'["brand:wikidata"="Q295576"]' },
+  { id:'pret',       name:'Pret A Manger',  group:'Coffee & Food',       color:'#8b1a1a', query:'["brand:wikidata"="Q1105664"]' },
+  { id:'costa',      name:'Costa Coffee',   group:'Coffee & Food',       color:'#6b2d1e', query:'["brand:wikidata"="Q608845"]' },
+  { id:'starbucks',  name:'Starbucks',      group:'Coffee & Food',       color:'#006241', query:'["brand:wikidata"="Q37158"]' },
+  { id:'pure_gym',   name:'PureGym',        group:'Fitness',             color:'#ff6600', query:'["brand:wikidata"="Q7260499"]' },
+  { id:'david_lloyd',name:'David Lloyd',    group:'Fitness',             color:'#003366', query:'["brand:wikidata"="Q5228576"]' },
+  { id:'bq',         name:'B&Q',            group:'Home & DIY',          color:'#f4a300', query:'["brand:wikidata"="Q812641"]' },
 ];
 
 const BRAND_MAP = Object.fromEntries(BRANDS.map(b => [b.id, b]));
