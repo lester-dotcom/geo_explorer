@@ -366,7 +366,7 @@ async function loadBrands() {
       setStatus(`Fetching ${brand.name}…`);
       try {
         // Build wikidata filter — pipe-separated IDs become a regex match
-        const wdVal = brand.wikidata.includes('|') ? `~"${brand.wikidata}"` : `"${brand.wikidata}"`;
+        const wdVal = brand.wikidata.includes('|') ? `~"${brand.wikidata}"` : `="${brand.wikidata}"`;
         const wdFilter = `["brand:wikidata"${wdVal}]`;
         const brandFilter = `["brand"~"${brand.brandRe}",i]`;
         const query = `[out:json][timeout:60][bbox:${bbox}];\n(\n  node${wdFilter};\n  way${wdFilter};\n  relation${wdFilter};\n  node${brandFilter};\n  way${brandFilter};\n);\nout center tags;`;
