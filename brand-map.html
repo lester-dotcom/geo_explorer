@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brand Opportunity Mapper — Pratt Digital</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --pd-green:#aec90b; --pd-green-dark:#8aaa00; --pd-green-light:#f4f9e0;
+  --pd-slate:#4c565c;
+  --bg:#f5f4f0; --surface:#fff; --surface2:#f0efe9; --border:#e2e0d8;
+  --text:#1a1a18; --muted:#6b6960; --radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"DM Sans",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+header{background:#fff;border-bottom:3px solid var(--pd-green);padding:10px 20px;display:flex;align-items:center;gap:16px;}
+.header-logo{height:36px;object-fit:contain;}
+.header-divider{width:1px;height:28px;background:var(--border);}
+header h1{font-size:14px;font-weight:400;color:var(--muted);}
+.layout{display:grid;grid-template-columns:300px 1fr;flex:1;height:calc(100vh - 59px);overflow:hidden;}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;}
+.section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;}
+.card{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.card-header{padding:8px 12px;font-size:12px;font-weight:600;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-body{padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+.brand-group{margin-bottom:8px;}
+.brand-group-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+.brand-item{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;user-select:none;}
+.brand-item input[type=checkbox]{width:14px;height:14px;accent-color:var(--pd-green);cursor:pointer;}
+.brand-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.brand-label{font-size:12px;color:var(--text);}
+.brand-count{font-size:10px;color:var(--muted);margin-left:auto;}
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:7px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;padding:8px 14px;transition:.15s;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-primary{background:var(--pd-green);color:var(--pd-slate);}
+.btn-primary:hover:not(:disabled){background:var(--pd-green-dark);}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-secondary:hover:not(:disabled){background:var(--border);}
+.btn-danger{background:#fdf0f0;color:#e24b4a;border:1px solid #fbd5d5;}
+.btn-danger:hover:not(:disabled){background:#fbd5d5;}
+.progress-bar{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:4px;}
+.progress-fill{height:100%;background:var(--pd-green);border-radius:2px;transition:width .3s;width:0;}
+.status{font-size:11px;color:var(--muted);text-align:center;padding:4px 0;}
+.status.error{color:#e24b4a;}
+.upload-label{border:1.5px dashed var(--border);border-radius:7px;padding:8px 10px;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--muted);transition:.15s;}
+.upload-label:hover{border-color:var(--pd-green);background:var(--pd-green-light);}
+#map{flex:1;}
+.legend{position:absolute;bottom:30px;right:10px;z-index:1000;background:rgba(255,255,255,.95);border:1px solid var(--border);border-radius:10px;padding:12px 14px;min-width:160px;max-height:60vh;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);}
+.legend h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:5px;}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.legend-name{color:var(--text);}
+.legend-n{color:var(--muted);margin-left:auto;font-size:10px;}
+.tooltip-popup .leaflet-popup-content-wrapper{border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);}
+.tooltip-popup .leaflet-popup-content{margin:8px 12px;font-size:12px;line-height:1.5;}
+.select-all-row{display:flex;gap:6px;justify-content:flex-end;margin-bottom:6px;}
+.select-all-btn{background:none;border:none;font-size:11px;color:var(--pd-green-dark);cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;}
+.results-bar{background:var(--surface2);border-top:1px solid var(--border);padding:6px 14px;font-size:11px;color:var(--muted);text-align:center;}
+.export-row{display:flex;gap:6px;}
+.export-btn{flex:1;font-size:11px;padding:6px 10px;}
+</style>
+<script>
+(function() {
+  try {
+    const b = window.name ? JSON.parse(window.name) : null;
+    if (!b || (!b.name && !b.primary)) return;
+    if (b.primary) {
+      document.documentElement.style.setProperty('--pd-green', b.primary);
+      document.documentElement.style.setProperty('--pd-green-dark', b.primary);
+      document.documentElement.style.setProperty('--pd-green-light', b.primary + '26');
+    }
+    if (b.secondary) {
+      document.documentElement.style.setProperty('--pd-slate', b.secondary);
+    }
+    if (b.name) document.title = document.title.replace('Pratt Digital', b.name);
+    window._geoSuiteBrand = b;
+  } catch(e) {}
+})();
+</script>
+</head>
+<body>
+<header>
+  <img id="headerLogo" class="header-logo" src="profile-tool/logo.jpg" alt="Logo">
+  <div class="header-divider"></div>
+  <h1>Brand Opportunity Mapper</h1>
+</header>
+<div class="layout">
+  <div class="sidebar">
+    <div class="card">
+      <div class="card-header">
+        Select Brands
+        <div class="select-all-row">
+          <button class="select-all-btn" onclick="selectAllBrands(true)">All</button>
+          <button class="select-all-btn" onclick="selectAllBrands(false)">None</button>
+        </div>
+      </div>
+      <div class="card-body" id="brandPicker">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Search Area</div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--muted)">Enter a postcode or place name to focus the map, or use the current map view.</div>
+        <div style="display:flex;gap:6px">
+          <input id="areaInput" type="text" placeholder="e.g. SW1A 1AA or London" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;">
+          <button class="btn btn-secondary" onclick="geocodeArea()" style="padding:6px 10px;font-size:11px">Go</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Customer Postcodes (optional)</div>
+      <div class="card-body">
+        <label class="upload-label" for="csvUpload">
+          <span style="font-size:16px">📂</span>
+          <span id="csvLabel">Upload CSV with postcode column</span>
+        </label>
+        <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="handleCSV(this)">
+        <button class="btn btn-danger" id="clearCsvBtn" style="display:none;font-size:11px;padding:5px 10px;" onclick="clearCSV()">Remove postcodes</button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="loadBtn" onclick="loadBrands()">🔍 Load Brand Locations</button>
+    <div class="progress-bar" id="progressBar" style="display:none"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="status" id="statusMsg"></div>
+
+    <div class="export-row" id="exportRow" style="display:none">
+      <button class="btn btn-secondary export-btn" onclick="exportCSV()">📥 CSV</button>
+      <button class="btn btn-secondary export-btn" style="background:#4c565c;color:#fff;border-color:#4c565c" onclick="generateBrief()">📄 Brief</button>
+    </div>
+  </div>
+
+  <div style="position:relative;flex:1;display:flex;flex-direction:column;">
+    <div id="map" style="flex:1;"></div>
+    <div class="legend" id="mapLegend" style="display:none"></div>
+    <div class="results-bar" id="resultsBar" style="display:none"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Brand definitions ───────────────────────────────────────────────────────
+const BRANDS = [
+  { id:'waitrose',   name:'Waitrose',       group:'Grocery — Premium',   color:'#2d7d2d', query:'["name"~"Waitrose",i]' },
+  { id:'ms_food',    name:'M&S Food',       group:'Grocery — Premium',   color:'#1a1a6e', query:'["brand"="Marks & Spencer"]["shop"="supermarket"]' },
+  { id:'sainsburys', name:'Sainsbury\'s',   group:'Grocery — Mid',       color:'#f07800', query:'["brand"="Sainsbury\'s"]["shop"~"supermarket|convenience"]' },
+  { id:'tesco',      name:'Tesco',          group:'Grocery — Mid',       color:'#e31e24', query:'["brand"="Tesco"]["shop"~"supermarket|convenience"]' },
+  { id:'whole_foods',name:'Whole Foods',    group:'Grocery — Premium',   color:'#00674b', query:'["name"~"Whole Foods",i]' },
+  { id:'aldi',       name:'Aldi',           group:'Grocery — Value',     color:'#1e3a6e', query:'["brand"="Aldi"]["shop"="supermarket"]' },
+  { id:'lidl',       name:'Lidl',           group:'Grocery — Value',     color:'#0050aa', query:'["brand"="Lidl"]["shop"="supermarket"]' },
+  { id:'john_lewis', name:'John Lewis',     group:'Department Store',    color:'#1a5276', query:'["name"~"John Lewis",i]["shop"]' },
+  { id:'next',       name:'Next',           group:'Department Store',    color:'#2c2c2c', query:'["brand"="Next"]["shop"="clothes"]' },
+  { id:'pret',       name:'Pret A Manger',  group:'Coffee & Food',       color:'#8b1a1a', query:'["brand"="Pret A Manger"]' },
+  { id:'costa',      name:'Costa Coffee',   group:'Coffee & Food',       color:'#6b2d1e', query:'["brand"="Costa Coffee"]' },
+  { id:'starbucks',  name:'Starbucks',      group:'Coffee & Food',       color:'#006241', query:'["brand"="Starbucks"]' },
+  { id:'pure_gym',   name:'PureGym',        group:'Fitness',             color:'#ff6600', query:'["brand"="PureGym"]' },
+  { id:'david_lloyd',name:'David Lloyd',    group:'Fitness',             color:'#003366', query:'["name"~"David Lloyd",i]' },
+  { id:'bq',         name:'B&Q',            group:'Home & DIY',          color:'#f4a300', query:'["brand"="B&Q"]' },
+];
+
+const BRAND_MAP = Object.fromEntries(BRANDS.map(b => [b.id, b]));
+
+// ── State ───────────────────────────────────────────────────────────────────
+let map;
+let brandLayers = {};   // id -> L.LayerGroup
+let customerLayer = null;
+let customerData = [];  // [{postcode, lat, lng}]
+let brandResults = {};  // id -> [{name, lat, lng, addr}]
+let loading = false;
+
+// ── Init ────────────────────────────────────────────────────────────────────
+function applyBrandSettings(s) {
+  if (!s) return;
+  if (s.primary) {
+    document.documentElement.style.setProperty('--pd-green', s.primary);
+    document.documentElement.style.setProperty('--pd-green-dark', s.primary);
+    document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
+  }
+  if (s.secondary) {
+    document.documentElement.style.setProperty('--pd-slate', s.secondary);
+  }
+  const logoSrc = s.logoUrl || s.logo || '';
+  if (logoSrc) { const img = document.getElementById('headerLogo'); if (img) img.src = logoSrc; }
+  if (s.name) {
+    const h1 = document.querySelector('header h1');
+    if (h1) h1.textContent = s.name + ' · Brand Opportunity Mapper';
+    document.title = document.title.replace('Pratt Digital', s.name);
+  }
+}
+
+(function() {
+  let s = window._geoSuiteBrand || {};
+  if (!s.name && !s.primary) {
+    try { const b = new URLSearchParams(window.location.search).get('brand'); if (b) s = JSON.parse(decodeURIComponent(escape(atob(b)))); } catch(e) {}
+  }
+  if (!s.name && !s.primary) {
+    try { s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  }
+  if (s.name || s.primary) { window._geoSuiteBrand = s; applyBrandSettings(s); }
+})();
+
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'geoSuiteBrand') {
+    window._geoSuiteBrand = e.data.settings;
+    applyBrandSettings(e.data.settings);
+  }
+});
+
+window.addEventListener('load', () => {
+  map = L.map('map').setView([52.5, -1.5], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom: 19
+  }).addTo(map);
+  renderBrandPicker();
+});
+
+// ── Brand picker ─────────────────────────────────────────────────────────────
+function renderBrandPicker() {
+  const groups = {};
+  BRANDS.forEach(b => {
+    if (!groups[b.group]) groups[b.group] = [];
+    groups[b.group].push(b);
+  });
+
+  const container = document.getElementById('brandPicker');
+  Object.entries(groups).forEach(([group, brands]) => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'brand-group';
+    groupEl.innerHTML = `<div class="brand-group-title">${group}</div>`;
+    brands.forEach(brand => {
+      const item = document.createElement('label');
+      item.className = 'brand-item';
+      item.innerHTML = `
+        <input type="checkbox" id="cb_${brand.id}" value="${brand.id}" checked>
+        <span class="brand-dot" style="background:${brand.color}"></span>
+        <span class="brand-label">${brand.name}</span>
+        <span class="brand-count" id="cnt_${brand.id}"></span>
+      `;
+      groupEl.appendChild(item);
+    });
+    container.appendChild(groupEl);
+  });
+}
+
+function selectAllBrands(val) {
+  BRANDS.forEach(b => {
+    const cb = document.getElementById('cb_' + b.id);
+    if (cb) cb.checked = val;
+  });
+}
+
+function selectedBrands() {
+  return BRANDS.filter(b => document.getElementById('cb_' + b.id)?.checked);
+}
+
+// ── Geocode ───────────────────────────────────────────────────────────────────
+async function geocodeArea() {
+  const q = document.getElementById('areaInput').value.trim();
+  if (!q) return;
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},UK&format=json&limit=1`);
+    const data = await r.json();
+    if (data.length) {
+      map.setView([+data[0].lat, +data[0].lon], 12);
+    } else {
+      setStatus('Location not found.', true);
+    }
+  } catch(e) { setStatus('Geocode error: ' + e.message, true); }
+}
+
+// ── CSV Upload ───────────────────────────────────────────────────────────────
+function handleCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('csvLabel').textContent = file.name;
+  document.getElementById('clearCsvBtn').style.display = '';
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+    const header = lines[0].toLowerCase().split(',');
+    const pcIdx = header.findIndex(h => h.includes('postcode') || h.includes('post_code') || h === 'pc' || h === 'postcd');
+    if (pcIdx < 0) { setStatus('No postcode column found in CSV.', true); return; }
+    const pcs = lines.slice(1).map(l => l.split(',')[pcIdx]?.replace(/"/g,'').trim().toUpperCase()).filter(Boolean);
+    setStatus(`Geocoding ${pcs.length} postcodes…`);
+    geocodePostcodes(pcs);
+  };
+  reader.readAsText(file);
+}
+
+async function geocodePostcodes(pcs) {
+  const batchSize = 100;
+  const results = [];
+  for (let i = 0; i < pcs.length; i += batchSize) {
+    const batch = pcs.slice(i, i + batchSize);
+    try {
+      const r = await fetch('https://api.postcodes.io/postcodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postcodes: batch })
+      });
+      const data = await r.json();
+      (data.result || []).forEach(item => {
+        if (item.result) results.push({ postcode: item.query, lat: item.result.latitude, lng: item.result.longitude });
+      });
+    } catch(e) {}
+  }
+  customerData = results;
+  renderCustomerLayer();
+  setStatus(`${results.length} customer postcodes mapped.`);
+}
+
+function clearCSV() {
+  customerData = [];
+  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  document.getElementById('csvLabel').textContent = 'Upload CSV with postcode column';
+  document.getElementById('clearCsvBtn').style.display = 'none';
+  document.getElementById('csvUpload').value = '';
+  setStatus('');
+}
+
+function renderCustomerLayer() {
+  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  if (!customerData.length) return;
+  customerLayer = L.layerGroup();
+  customerData.forEach(d => {
+    L.circleMarker([d.lat, d.lng], {
+      radius: 4, color: '#fff', weight: 1, fillColor: '#666', fillOpacity: 0.6
+    }).bindTooltip(d.postcode, { className: '' }).addTo(customerLayer);
+  });
+  customerLayer.addTo(map);
+}
+
+// ── Load Brands ───────────────────────────────────────────────────────────────
+async function loadBrands() {
+  if (loading) return;
+  const brands = selectedBrands();
+  if (!brands.length) { setStatus('Select at least one brand.', true); return; }
+
+  loading = true;
+  document.getElementById('loadBtn').disabled = true;
+  document.getElementById('progressBar').style.display = '';
+  document.getElementById('exportRow').style.display = 'none';
+  document.getElementById('resultsBar').style.display = 'none';
+
+  // Clear existing brand layers
+  Object.values(brandLayers).forEach(l => map.removeLayer(l));
+  brandLayers = {};
+  brandResults = {};
+  BRANDS.forEach(b => { const el = document.getElementById('cnt_' + b.id); if (el) el.textContent = ''; });
+
+  const bounds = map.getBounds();
+  const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+
+  let completed = 0;
+  setStatus(`Loading ${brands.length} brand(s)…`);
+
+  for (const brand of brands) {
+    setProgress((completed / brands.length) * 100);
+    setStatus(`Fetching ${brand.name}…`);
+    try {
+      const query = `[out:json][timeout:30][bbox:${bbox}];\n(node${brand.query};\nway${brand.query};\nrelation${brand.query};);\nout center;`;
+      const r = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: 'data=' + encodeURIComponent(query)
+      });
+      const data = await r.json();
+      const elements = (data.elements || []).map(el => {
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        if (!lat || !lng) return null;
+        const tags = el.tags || {};
+        const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ');
+        return { lat, lng, name: tags.name || brand.name, addr };
+      }).filter(Boolean);
+
+      brandResults[brand.id] = elements;
+      const cnt = document.getElementById('cnt_' + brand.id);
+      if (cnt) cnt.textContent = elements.length ? `(${elements.length})` : '';
+
+      const layer = L.layerGroup();
+      elements.forEach(el => {
+        const marker = L.circleMarker([el.lat, el.lng], {
+          radius: 7, color: '#fff', weight: 1.5, fillColor: brand.color, fillOpacity: 0.85
+        });
+        marker.bindPopup(`<strong>${el.name}</strong>${el.addr ? '<br><span style="color:#6b6960;font-size:11px">' + el.addr + '</span>' : ''}`, { className: 'tooltip-popup' });
+        layer.addLayer(marker);
+      });
+      layer.addTo(map);
+      brandLayers[brand.id] = layer;
+    } catch(e) {
+      setStatus(`Error loading ${brand.name}: ${e.message}`, true);
+    }
+    completed++;
+  }
+
+  setProgress(100);
+  updateLegend();
+  updateResultsBar();
+  document.getElementById('exportRow').style.display = '';
+  document.getElementById('progressBar').style.display = 'none';
+  setStatus('');
+  loading = false;
+  document.getElementById('loadBtn').disabled = false;
+}
+
+// ── Legend & results ─────────────────────────────────────────────────────────
+function updateLegend() {
+  const legend = document.getElementById('mapLegend');
+  const loaded = BRANDS.filter(b => brandResults[b.id] && brandResults[b.id].length > 0);
+  if (!loaded.length) { legend.style.display = 'none'; return; }
+
+  legend.style.display = '';
+  legend.innerHTML = '<h3>Brands</h3>';
+  if (customerData.length) {
+    legend.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:#666;opacity:.7"></span><span class="legend-name">Customers</span><span class="legend-n">${customerData.length}</span></div>`;
+  }
+  loaded.forEach(b => {
+    const n = brandResults[b.id]?.length || 0;
+    legend.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${b.color}"></span><span class="legend-name">${b.name}</span><span class="legend-n">${n}</span></div>`;
+  });
+}
+
+function updateResultsBar() {
+  const bar = document.getElementById('resultsBar');
+  const total = Object.values(brandResults).reduce((s, a) => s + a.length, 0);
+  const brandCount = Object.keys(brandResults).filter(id => brandResults[id].length > 0).length;
+  bar.style.display = '';
+  bar.textContent = `${total.toLocaleString()} locations found across ${brandCount} brand(s) in current map view`;
+}
+
+function setProgress(pct) {
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+function setStatus(msg, isError = false) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status' + (isError ? ' error' : '');
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const rows = [['Brand','Name','Latitude','Longitude','Address']];
+  BRANDS.forEach(b => {
+    (brandResults[b.id] || []).forEach(el => {
+      rows.push([b.name, el.name, el.lat, el.lng, el.addr || '']);
+    });
+  });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  a.download = 'brand-locations.csv';
+  a.click();
+}
+
+// ── Brief ─────────────────────────────────────────────────────────────────────
+function generateBrief() {
+  const loaded = BRANDS.filter(b => brandResults[b.id] && brandResults[b.id].length > 0);
+  if (!loaded.length) { alert('Load brand locations first.'); return; }
+
+  let branding = window._geoSuiteBrand || {};
+  if (!branding.name && !branding.primary) {
+    try { const b = new URLSearchParams(window.location.search).get('brand'); if (b) branding = JSON.parse(decodeURIComponent(escape(atob(b)))); } catch(e) {}
+  }
+  if (!branding.name && !branding.primary) {
+    try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  }
+
+  const agencyName = branding.name || 'Pratt Digital';
+  const primary = branding.primary || '#aec90b';
+  const logoSrc = branding.logoUrl || branding.logo || '';
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const bounds = map.getBounds();
+  const areaDesc = document.getElementById('areaInput').value.trim() || 'Current Map View';
+
+  const totalLocations = Object.values(brandResults).reduce((s, a) => s + a.length, 0);
+
+  const brandRows = loaded.map(b => {
+    const n = brandResults[b.id]?.length || 0;
+    return `<tr>
+      <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${b.color};margin-right:6px;vertical-align:middle"></span>${b.name}</td>
+      <td style="text-align:right;font-weight:600">${n}</td>
+      <td style="text-align:right;color:#6b6960">${totalLocations ? Math.round(n/totalLocations*100) : 0}%</td>
+    </tr>`;
+  }).join('');
+
+  const logoHTML = logoSrc
+    ? `<img src="${logoSrc}" style="max-height:44px;max-width:180px;object-fit:contain" alt="Logo">`
+    : `<div style="background:${primary};color:#fff;font-weight:700;font-size:14px;padding:8px 14px;border-radius:6px">${agencyName}</div>`;
+
+  const briefHTML = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Brand Opportunity Map — ${agencyName}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--primary:${primary};}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13px;line-height:1.6;}
+@media print{.no-print{display:none!important;}}
+@page{margin:15mm;size:A4;}
+.page{max-width:860px;margin:0 auto;padding:30px;}
+.brief-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:4px solid var(--primary);margin-bottom:24px;}
+.brief-title{font-size:20px;font-weight:700;color:#4c565c;}
+.brief-meta{font-size:11px;color:#6b6960;margin-top:3px;}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin:20px 0 10px;padding-bottom:5px;border-bottom:1px solid #e2e0d8;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #f0efe9;font-size:12px;}
+th{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b6960;background:#f5f4f0;}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
+.stat-card{background:#f5f4f0;border-radius:8px;padding:12px 14px;border-left:3px solid var(--primary);}
+.stat-value{font-size:24px;font-weight:700;color:var(--primary);}
+.stat-label{font-size:11px;color:#6b6960;margin-top:2px;}
+.print-btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brief-header">
+    ${logoHTML}
+    <div style="text-align:right">
+      <div class="brief-title">Brand Opportunity Mapper</div>
+      <div class="brief-meta">Area: ${areaDesc} &nbsp;·&nbsp; ${today}</div>
+    </div>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-value">${loaded.length}</div><div class="stat-label">Brands Mapped</div></div>
+    <div class="stat-card"><div class="stat-value">${totalLocations.toLocaleString()}</div><div class="stat-label">Total Locations</div></div>
+    <div class="stat-card"><div class="stat-value">${customerData.length ? customerData.length.toLocaleString() : '—'}</div><div class="stat-label">Customer Locations</div></div>
+  </div>
+  <div class="section-title">Brand Locations in View</div>
+  <table>
+    <thead><tr><th>Brand</th><th style="text-align:right">Locations</th><th style="text-align:right">Share</th></tr></thead>
+    <tbody>${brandRows}</tbody>
+  </table>
+  <div style="margin-top:24px;font-size:11px;color:#6b6960">
+    Data sourced from OpenStreetMap via Overpass API. Map bounds: ${bounds.getSouth().toFixed(3)}°N–${bounds.getNorth().toFixed(3)}°N, ${bounds.getWest().toFixed(3)}°E–${bounds.getEast().toFixed(3)}°E
+  </div>
+  <div style="margin-top:20px;text-align:right" class="no-print">
+    <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  </div>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+</script>
+</body>
+</html>

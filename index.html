@@ -337,6 +337,48 @@ footer {
       </div>
     </a>
 
+    <a class="tool-card" id="card-local" href="#" onclick="loadTool('local-coverage.html', event)">
+      <div class="tool-header">
+        <div class="tool-icon" style="background:#f0f4ff">📍</div>
+        <div class="tool-meta">
+          <span class="tag" style="background:#f0f4ff;color:#1e40af">Coverage</span>
+          <h3>Local Coverage Map</h3>
+        </div>
+      </div>
+      <p class="tool-desc">Map multiple store or branch locations and visualise catchment zones. Upload customer postcodes to see coverage rings, fringe areas and gaps across all your sites.</p>
+      <div class="tool-features">
+        <div class="tool-feature">Multi-location catchment zones</div>
+        <div class="tool-feature">Primary, fringe &amp; outside rings</div>
+        <div class="tool-feature">Dot, heatmap &amp; district views</div>
+        <div class="tool-feature">Coverage brief PDF export</div>
+      </div>
+      <div class="tool-cta">
+        <button class="tool-btn" style="background:#1e40af;color:#fff" onclick="event.stopPropagation(); loadTool('local-coverage.html', event)">Open tool →</button>
+        <span class="tool-note">Best for multi-site businesses</span>
+      </div>
+    </a>
+
+    <a class="tool-card" id="card-brands" href="#" onclick="loadTool('brand-map.html', event)">
+      <div class="tool-header">
+        <div class="tool-icon" style="background:#fff7ed">🏪</div>
+        <div class="tool-meta">
+          <span class="tag" style="background:#fff7ed;color:#c2410c">Opportunity</span>
+          <h3>Brand Opportunity Mapper</h3>
+        </div>
+      </div>
+      <p class="tool-desc">Overlay major UK retail brand locations on a map to identify gaps and opportunities. Select from Waitrose, M&amp;S, Sainsbury's, Costa and more — then compare with your own customer data.</p>
+      <div class="tool-features">
+        <div class="tool-feature">15 major UK retail brands</div>
+        <div class="tool-feature">Multi-brand overlay comparison</div>
+        <div class="tool-feature">Optional customer postcode upload</div>
+        <div class="tool-feature">Opportunity brief PDF export</div>
+      </div>
+      <div class="tool-cta">
+        <button class="tool-btn" style="background:#c2410c;color:#fff" onclick="event.stopPropagation(); loadTool('brand-map.html', event)">Open tool →</button>
+        <span class="tool-note">Powered by OpenStreetMap live data</span>
+      </div>
+    </a>
+
   </div>
 </main>
 
@@ -687,6 +729,10 @@ function loadTool(filename, event) {
     ? 'Customer & Location Mapper'
     : filename === 'customer-map.html'
     ? 'Customer Location Mapper'
+    : filename === 'local-coverage.html'
+    ? 'Local Coverage Map'
+    : filename === 'brand-map.html'
+    ? 'Brand Opportunity Mapper'
     : 'Profile & Lookalike Finder';
 
   logo.src = document.getElementById('headerLogo').src;
