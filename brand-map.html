@@ -370,7 +370,11 @@ async function loadBrands() {
         const wdFilter = `["brand:wikidata"${wdVal}]`;
         const brandFilter = `["brand"~"${brand.brandRe}",i]`;
         const query = `[out:json][timeout:60][bbox:${bbox}];\n(\n  node${wdFilter};\n  way${wdFilter};\n  relation${wdFilter};\n  node${brandFilter};\n  way${brandFilter};\n);\nout center tags;`;
-        const r = await fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query));
+        const r = await fetch('https://overpass.openstreetmap.fr/api/interpreter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(query)
+        });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
         if (data.elements === undefined) throw new Error(data.remark || 'No data returned');
