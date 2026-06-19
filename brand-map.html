@@ -236,7 +236,7 @@ function renderBrandPicker() {
       const item = document.createElement('label');
       item.className = 'brand-item';
       item.innerHTML = `
-        <input type="checkbox" id="cb_${brand.id}" value="${brand.id}" checked>
+        <input type="checkbox" id="cb_${brand.id}" value="${brand.id}">
         <span class="brand-dot" style="background:${brand.color}"></span>
         <span class="brand-label">${brand.name}</span>
         <span class="brand-count" id="cnt_${brand.id}"></span>
@@ -357,54 +357,72 @@ async function loadBrands() {
   const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
 
   let completed = 0;
+  const errors = [];
   setStatus(`Loading ${brands.length} brand(s)…`);
 
-  for (const brand of brands) {
-    setProgress((completed / brands.length) * 100);
-    setStatus(`Fetching ${brand.name}…`);
-    try {
-      const wdFilter = `["brand:wikidata"="${brand.wikidata}"]`;
-      const nameFilter = `["name"~"${brand.nameRe}",i]["shop"]`;
-      const query = `[out:json][timeout:60][bbox:${bbox}];\n(\n  node${wdFilter};\n  way${wdFilter};\n  node${nameFilter};\n  way${nameFilter};\n);\nout center tags;`;
-      const r = await fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query));
-      const data = await r.json();
-      const elements = (data.elements || []).map(el => {
-        const lat = el.lat ?? el.center?.lat;
-        const lng = el.lon ?? el.center?.lon;
-        if (!lat || !lng) return null;
-        const tags = el.tags || {};
-        const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ');
-        return { lat, lng, name: tags.name || brand.name, addr };
-      }).filter(Boolean);
+  try {
+    for (const brand of brands) {
+      setProgress((completed / brands.length) * 100);
+      setStatus(`Fetching ${brand.name}…`);
+      try {
+        const wdFilter = `["brand:wikidata"="${brand.wikidata}"]`;
+        const nameFilter = `["name"~"${brand.nameRe}",i]["shop"]`;
+        const query = `[out:json][timeout:60][bbox:${bbox}];\n(\n  node${wdFilter};\n  way${wdFilter};\n  relation${wdFilter};\n  node${nameFilter};\n  way${nameFilter};\n);\nout center tags;`;
+        const r = await fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query));
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        if (data.elements === undefined) throw new Error(data.remark || 'No data returned');
 
-      brandResults[brand.id] = elements;
-      const cnt = document.getElementById('cnt_' + brand.id);
-      if (cnt) cnt.textContent = elements.length ? `(${elements.length})` : '';
+        // Deduplicate by lat/lng in case wikidata and name queries overlap
+        const seen = new Set();
+        const elements = (data.elements).map(el => {
+          const lat = el.lat ?? el.center?.lat;
+          const lng = el.lon ?? el.center?.lon;
+          if (!lat || !lng) return null;
+          const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+          if (seen.has(key)) return null;
+          seen.add(key);
+          const tags = el.tags || {};
+          const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(', ');
+          return { lat, lng, name: tags.name || brand.name, addr };
+        }).filter(Boolean);
 
-      const layer = L.layerGroup();
-      elements.forEach(el => {
-        const marker = L.circleMarker([el.lat, el.lng], {
-          radius: 7, color: '#fff', weight: 1.5, fillColor: brand.color, fillOpacity: 0.85
+        brandResults[brand.id] = elements;
+        const cnt = document.getElementById('cnt_' + brand.id);
+        if (cnt) cnt.textContent = elements.length ? `(${elements.length})` : '(0)';
+
+        const layer = L.layerGroup();
+        elements.forEach(el => {
+          const marker = L.circleMarker([el.lat, el.lng], {
+            radius: 7, color: '#fff', weight: 1.5, fillColor: brand.color, fillOpacity: 0.85
+          });
+          marker.bindPopup(`<strong>${el.name}</strong>${el.addr ? '<br><span style="color:#6b6960;font-size:11px">' + el.addr + '</span>' : ''}`, { className: 'tooltip-popup' });
+          layer.addLayer(marker);
         });
-        marker.bindPopup(`<strong>${el.name}</strong>${el.addr ? '<br><span style="color:#6b6960;font-size:11px">' + el.addr + '</span>' : ''}`, { className: 'tooltip-popup' });
-        layer.addLayer(marker);
-      });
-      layer.addTo(map);
-      brandLayers[brand.id] = layer;
-    } catch(e) {
-      setStatus(`Error loading ${brand.name}: ${e.message}`, true);
+        layer.addTo(map);
+        brandLayers[brand.id] = layer;
+      } catch(e) {
+        errors.push(`${brand.name}: ${e.message}`);
+        const cnt = document.getElementById('cnt_' + brand.id);
+        if (cnt) cnt.textContent = '(error)';
+      }
+      completed++;
     }
-    completed++;
-  }
 
-  setProgress(100);
-  updateLegend();
-  updateResultsBar();
-  document.getElementById('exportRow').style.display = '';
-  document.getElementById('progressBar').style.display = 'none';
-  setStatus('');
-  loading = false;
-  document.getElementById('loadBtn').disabled = false;
+    setProgress(100);
+    updateLegend();
+    updateResultsBar();
+    document.getElementById('exportRow').style.display = '';
+    document.getElementById('progressBar').style.display = 'none';
+    if (errors.length) {
+      setStatus(`Finished with ${errors.length} error(s): ${errors.join('; ')}`, true);
+    } else {
+      setStatus('');
+    }
+  } finally {
+    loading = false;
+    document.getElementById('loadBtn').disabled = false;
+  }
 }
 
 // ── Legend & results ─────────────────────────────────────────────────────────
