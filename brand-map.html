@@ -144,23 +144,23 @@ header h1{font-size:14px;font-weight:400;color:var(--muted);}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Brand definitions ───────────────────────────────────────────────────────
-// brand:wikidata is the most reliable tag in OSM — consistent across name variations
+// Each brand has a wikidata ID and a name regex as fallback — union query catches both
 const BRANDS = [
-  { id:'waitrose',   name:'Waitrose',       group:'Grocery — Premium',   color:'#2d7d2d', query:'["brand:wikidata"="Q1138191"]' },
-  { id:'ms_food',    name:'M&S Food',       group:'Grocery — Premium',   color:'#1a1a6e', query:'["brand:wikidata"="Q714491"]["shop"]' },
-  { id:'sainsburys', name:'Sainsbury\'s',   group:'Grocery — Mid',       color:'#f07800', query:'["brand:wikidata"="Q582347"]' },
-  { id:'tesco',      name:'Tesco',          group:'Grocery — Mid',       color:'#e31e24', query:'["brand:wikidata"="Q487494"]' },
-  { id:'whole_foods',name:'Whole Foods',    group:'Grocery — Premium',   color:'#00674b', query:'["brand:wikidata"="Q7866848"]' },
-  { id:'aldi',       name:'Aldi',           group:'Grocery — Value',     color:'#1e3a6e', query:'["brand:wikidata"="Q125054"]' },
-  { id:'lidl',       name:'Lidl',           group:'Grocery — Value',     color:'#0050aa', query:'["brand:wikidata"="Q151954"]' },
-  { id:'john_lewis', name:'John Lewis',     group:'Department Store',    color:'#1a5276', query:'["brand:wikidata"="Q1642376"]' },
-  { id:'next',       name:'Next',           group:'Department Store',    color:'#2c2c2c', query:'["brand:wikidata"="Q295576"]' },
-  { id:'pret',       name:'Pret A Manger',  group:'Coffee & Food',       color:'#8b1a1a', query:'["brand:wikidata"="Q1105664"]' },
-  { id:'costa',      name:'Costa Coffee',   group:'Coffee & Food',       color:'#6b2d1e', query:'["brand:wikidata"="Q608845"]' },
-  { id:'starbucks',  name:'Starbucks',      group:'Coffee & Food',       color:'#006241', query:'["brand:wikidata"="Q37158"]' },
-  { id:'pure_gym',   name:'PureGym',        group:'Fitness',             color:'#ff6600', query:'["brand:wikidata"="Q7260499"]' },
-  { id:'david_lloyd',name:'David Lloyd',    group:'Fitness',             color:'#003366', query:'["brand:wikidata"="Q5228576"]' },
-  { id:'bq',         name:'B&Q',            group:'Home & DIY',          color:'#f4a300', query:'["brand:wikidata"="Q812641"]' },
+  { id:'waitrose',   name:'Waitrose',       group:'Grocery — Premium',   color:'#2d7d2d', wikidata:'Q1138191', nameRe:'Waitrose' },
+  { id:'ms_food',    name:'M&S Food',       group:'Grocery — Premium',   color:'#1a1a6e', wikidata:'Q714491',  nameRe:'Marks.*Spencer|M&S' },
+  { id:'sainsburys', name:'Sainsbury\'s',   group:'Grocery — Mid',       color:'#f07800', wikidata:'Q582347',  nameRe:'Sainsbury' },
+  { id:'tesco',      name:'Tesco',          group:'Grocery — Mid',       color:'#e31e24', wikidata:'Q487494',  nameRe:'Tesco' },
+  { id:'whole_foods',name:'Whole Foods',    group:'Grocery — Premium',   color:'#00674b', wikidata:'Q7866848', nameRe:'Whole Foods' },
+  { id:'aldi',       name:'Aldi',           group:'Grocery — Value',     color:'#1e3a6e', wikidata:'Q125054',  nameRe:'Aldi' },
+  { id:'lidl',       name:'Lidl',           group:'Grocery — Value',     color:'#0050aa', wikidata:'Q151954',  nameRe:'Lidl' },
+  { id:'john_lewis', name:'John Lewis',     group:'Department Store',    color:'#1a5276', wikidata:'Q1642376', nameRe:'John Lewis' },
+  { id:'next',       name:'Next',           group:'Department Store',    color:'#2c2c2c', wikidata:'Q295576',  nameRe:'^Next$' },
+  { id:'pret',       name:'Pret A Manger',  group:'Coffee & Food',       color:'#8b1a1a', wikidata:'Q1105664', nameRe:'Pret' },
+  { id:'costa',      name:'Costa Coffee',   group:'Coffee & Food',       color:'#6b2d1e', wikidata:'Q608845',  nameRe:'Costa Coffee' },
+  { id:'starbucks',  name:'Starbucks',      group:'Coffee & Food',       color:'#006241', wikidata:'Q37158',   nameRe:'Starbucks' },
+  { id:'pure_gym',   name:'PureGym',        group:'Fitness',             color:'#ff6600', wikidata:'Q7260499', nameRe:'PureGym' },
+  { id:'david_lloyd',name:'David Lloyd',    group:'Fitness',             color:'#003366', wikidata:'Q5228576', nameRe:'David Lloyd' },
+  { id:'bq',         name:'B&Q',            group:'Home & DIY',          color:'#f4a300', wikidata:'Q812641',  nameRe:'B&Q' },
 ];
 
 const BRAND_MAP = Object.fromEntries(BRANDS.map(b => [b.id, b]));
@@ -363,11 +363,10 @@ async function loadBrands() {
     setProgress((completed / brands.length) * 100);
     setStatus(`Fetching ${brand.name}…`);
     try {
-      const query = `[out:json][timeout:30][bbox:${bbox}];\n(node${brand.query};\nway${brand.query};\nrelation${brand.query};);\nout center;`;
-      const r = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(query)
-      });
+      const wdFilter = `["brand:wikidata"="${brand.wikidata}"]`;
+      const nameFilter = `["name"~"${brand.nameRe}",i]["shop"]`;
+      const query = `[out:json][timeout:60][bbox:${bbox}];\n(\n  node${wdFilter};\n  way${wdFilter};\n  node${nameFilter};\n  way${nameFilter};\n);\nout center tags;`;
+      const r = await fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query));
       const data = await r.json();
       const elements = (data.elements || []).map(el => {
         const lat = el.lat ?? el.center?.lat;
