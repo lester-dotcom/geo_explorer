@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Brand Opportunity Mapper — Pratt Digital</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -119,7 +120,7 @@ header h1{font-size:14px;font-weight:400;color:var(--muted);}
           <span style="font-size:16px">📂</span>
           <span id="csvLabel">Upload CSV with postcode column</span>
         </label>
-        <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="handleCSV(this)">
+        <input type="file" id="csvUpload" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleCSV(this)">
         <button class="btn btn-danger" id="clearCsvBtn" style="display:none;font-size:11px;padding:5px 10px;" onclick="clearCSV()">Remove postcodes</button>
       </div>
     </div>
@@ -279,23 +280,48 @@ function handleCSV(input) {
   if (!file) return;
   document.getElementById('csvLabel').textContent = file.name;
   document.getElementById('clearCsvBtn').style.display = '';
+
+  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
   const reader = new FileReader();
+
   reader.onload = e => {
-    const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
-    const header = lines[0].toLowerCase().split(',');
-    const pcIdx = header.findIndex(h => h.includes('postcode') || h.includes('post_code') || h === 'pc' || h === 'postcd');
-    if (pcIdx < 0) { setStatus('No postcode column found in CSV.', true); return; }
-    const pcs = lines.slice(1).map(l => l.split(',')[pcIdx]?.replace(/"/g,'').trim().toUpperCase()).filter(Boolean);
-    setStatus(`Geocoding ${pcs.length} postcodes…`);
+    let rows = [];
+    if (isExcel) {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    } else {
+      rows = e.target.result.split('\n')
+        .map(l => l.trim().split(',').map(c => c.replace(/"/g, '').trim()))
+        .filter(r => r.some(Boolean));
+    }
+
+    if (rows.length < 2) { setStatus('File appears empty.', true); return; }
+
+    const header = rows[0].map(h => String(h).toLowerCase().trim());
+    const pcIdx = header.findIndex(h =>
+      h.includes('postcode') || h.includes('post_code') || h.includes('post code') ||
+      h === 'pc' || h === 'postcd' || h === 'postal'
+    );
+    if (pcIdx < 0) { setStatus(`No postcode column found. Headers: ${header.slice(0,8).join(', ')}`, true); return; }
+
+    const pcs = rows.slice(1)
+      .map(r => String(r[pcIdx] || '').trim().toUpperCase())
+      .filter(p => p && /^[A-Z]{1,2}\d/.test(p));
+
+    setStatus(`Found ${pcs.length} postcodes, geocoding…`);
     geocodePostcodes(pcs);
   };
-  reader.readAsText(file);
+
+  if (isExcel) reader.readAsArrayBuffer(file);
+  else reader.readAsText(file);
 }
 
 async function geocodePostcodes(pcs) {
   const batchSize = 100;
   const results = [];
-  for (let i = 0; i < pcs.length; i += batchSize) {
+  const total = pcs.length;
+  for (let i = 0; i < total; i += batchSize) {
     const batch = pcs.slice(i, i + batchSize);
     try {
       const r = await fetch('https://api.postcodes.io/postcodes', {
@@ -308,10 +334,11 @@ async function geocodePostcodes(pcs) {
         if (item.result) results.push({ postcode: item.query, lat: item.result.latitude, lng: item.result.longitude });
       });
     } catch(e) {}
+    setStatus(`Geocoding postcodes… ${Math.min(i + batchSize, total).toLocaleString()} / ${total.toLocaleString()}`);
   }
   customerData = results;
   renderCustomerLayer();
-  setStatus(`${results.length} customer postcodes mapped.`);
+  setStatus(`${results.length.toLocaleString()} of ${total.toLocaleString()} customer postcodes mapped.`);
 }
 
 function clearCSV() {
