@@ -951,19 +951,44 @@ function exportProfile() {
   dlCSV(rows,'customer_profile.csv');
 }
 function exportLookalikes() {
+  const wb = XLSX.utils.book_new();
+
   if (lookalikMode === 'gap') {
     if (!profileData?.lookalikes?.length) return;
-    const rows = [['district','region','imd_decile','hp_band','rural','match_score']];
+
+    // Sheet 1: Districts
+    const distRows = [['District','Match Score','Region','IMD Decile','House Price Band','Rural']];
     for (const m of profileData.lookalikes)
-      rows.push([m.district, m.stats.region, m.stats.imd, m.stats.hp, m.stats.rural, m.score]);
-    dlCSV(rows, 'gap_districts.csv');
+      distRows.push([m.district, m.score, m.stats.region, m.stats.imd, m.stats.hp, m.stats.rural]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(distRows), 'Districts');
+
+    // Sheet 2: Sectors (expand each district to 10 possible sectors 0-9)
+    const secRows = [['Sector','Match Score','District','Region']];
+    for (const m of profileData.lookalikes)
+      for (let i = 0; i <= 9; i++)
+        secRows.push([`${m.district} ${i}`, m.score, m.district, m.stats.region]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
+
+    XLSX.writeFile(wb, 'gap_districts.xlsx');
+
   } else {
     if (!profileData?.underindex?.length) return;
-    const rows = [['district','region','imd_decile','hp_band','rural','profile_match','actual_customers','expected_customers','index','customer_gap']];
+
+    // Sheet 1: Districts
+    const distRows = [['District','Index Score','Profile Match','Actual Customers','Expected Customers','Customer Gap','Region','IMD Decile','House Price Band','Rural']];
     for (const r of profileData.underindex)
-      rows.push([r.district, r.stats.region, r.stats.imd, r.stats.hp, r.stats.rural,
-        r.profileScore, r.count, r.expectedCount, r.index, r.gap]);
-    dlCSV(rows, 'underindexing_districts.csv');
+      distRows.push([r.district, r.index, r.profileScore, r.count, r.expectedCount, r.gap,
+        r.stats.region, r.stats.imd, r.stats.hp, r.stats.rural]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(distRows), 'Districts');
+
+    // Sheet 2: Sectors (expand each district to 10 possible sectors 0-9)
+    const secRows = [['Sector','Index Score','Profile Match','District','Region']];
+    for (const r of profileData.underindex)
+      for (let i = 0; i <= 9; i++)
+        secRows.push([`${r.district} ${i}`, r.index, r.profileScore, r.district, r.stats.region]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
+
+    XLSX.writeFile(wb, 'underindexing_districts.xlsx');
   }
 }
 
