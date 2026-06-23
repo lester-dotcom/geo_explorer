@@ -167,7 +167,13 @@ textarea::placeholder { color: var(--muted); }
     </div>
 
     <div id="topPanel" style="display:none">
-      <div class="section-label">Top postcode districts</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="section-label" style="margin-bottom:0" id="topPanelLabel">Top postcode districts</div>
+        <div class="seg" style="font-size:11px">
+          <button id="btnViewDistrict" class="active" onclick="switchTopView('district')">District</button>
+          <button id="btnViewSector" onclick="switchTopView('sector')">Sector</button>
+        </div>
+      </div>
       <div class="top-list" id="topList"></div>
     </div>
   </div>
@@ -356,7 +362,9 @@ async function runAnalysis() {
     const loc = geo[key];
     if (loc && loc.valid && loc.lat != null && loc.lng != null) {
       resultData.push({ postcode: c.postcode, lat: loc.lat, lng: loc.lng,
-        district: c.postcode.replace(/\s.*/,''), adminDistrict: loc.district, region: loc.region });
+        district: c.postcode.replace(/\s.*/,''),
+        sector: c.postcode.replace(/\s.*/,'') + ' ' + (c.postcode.split(' ')[1]?.[0] || ''),
+        adminDistrict: loc.district, region: loc.region });
       bounds.push([loc.lat, loc.lng]);
     } else failed++;
   }
@@ -384,15 +392,34 @@ async function runAnalysis() {
     ${failed > 0 ? `<div class="stat"><div class="num" style="color:var(--red)">${failed}</div><div class="lbl">Not geocoded</div></div>` : ''}`;
 
   document.getElementById('topPanel').style.display = 'block';
-  document.getElementById('topList').innerHTML = top.map(([d,n]) => `
+  renderTopList('district');
+
+  setStatus(`✓ ${resultData.length.toLocaleString()} of ${customerData.length.toLocaleString()} customers plotted across ${Object.keys(dc).length} districts.${failed > 0 ? ` ${failed} could not be geocoded.` : ''}`, 'success');
+  document.getElementById('plotBtn').disabled = false;
+}
+
+// ── Top list ──────────────────────────────────────────────────────────────
+function renderTopList(view) {
+  const counts = {};
+  for (const r of resultData) {
+    const key = view === 'sector' ? r.sector : r.district;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const mx = top[0]?.[1] || 1;
+  document.getElementById('topPanelLabel').textContent = view === 'sector' ? 'Top postcode sectors' : 'Top postcode districts';
+  document.getElementById('topList').innerHTML = top.map(([d, n]) => `
     <div class="top-item">
       <span class="district">${d}</span>
       <div class="bar-wrap"><div class="bar-inner" style="width:${Math.round(n/mx*100)}%"></div></div>
       <span class="cnt">${n}</span>
     </div>`).join('');
+}
 
-  setStatus(`✓ ${resultData.length.toLocaleString()} of ${customerData.length.toLocaleString()} customers plotted across ${Object.keys(dc).length} districts.${failed > 0 ? ` ${failed} could not be geocoded.` : ''}`, 'success');
-  document.getElementById('plotBtn').disabled = false;
+function switchTopView(view) {
+  document.getElementById('btnViewDistrict').classList.toggle('active', view === 'district');
+  document.getElementById('btnViewSector').classList.toggle('active', view === 'sector');
+  if (resultData.length) renderTopList(view);
 }
 
 // ── Layer management ──────────────────────────────────────────────────────
@@ -708,18 +735,20 @@ function generateCustomerBrief() {
 function exportCSV() {
   if (!resultData.length) { alert('Run analysis first.'); return; }
 
-  // Group by district
+  // Group by district, aggregate sectors within each
   const dd = {};
   for (const r of resultData) {
-    if (!dd[r.district]) dd[r.district] = { count: 0, region: r.region, adminDistrict: r.adminDistrict };
+    if (!dd[r.district]) dd[r.district] = { count: 0, region: r.region, adminDistrict: r.adminDistrict, sectors: {} };
     dd[r.district].count++;
+    dd[r.district].sectors[r.sector] = (dd[r.district].sectors[r.sector] || 0) + 1;
   }
 
-  const rows = [['district', 'customer_count', 'region', 'admin_district']];
+  const rows = [['district', 'customer_count', 'sectors', 'region', 'admin_district']];
   Object.entries(dd)
     .sort((a, b) => b[1].count - a[1].count)
     .forEach(([district, info]) => {
-      rows.push([district, info.count, info.region, info.adminDistrict]);
+      const sectorList = Object.entries(info.sectors).sort((a,b) => b[1]-a[1]).map(([s,n]) => `${s}(${n})`).join(' ');
+      rows.push([district, info.count, sectorList, info.region, info.adminDistrict]);
     });
 
   const a = document.createElement('a');
