@@ -282,12 +282,14 @@ function redrawCustomerLayer() {
     if (inHNW && !showInHNW) continue;
     if (!inHNW && !showOutHNW) continue;
     L.circleMarker([r.lat, r.lng], {
-      radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
-      fillOpacity: 0.3, weight: 1.5
+      radius: 7, fillColor: inHNW ? '#22c55e' : '#ef4444', color: inHNW ? '#22c55e' : '#ef4444',
+      fillOpacity: 0, weight: 2.5
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
   customerLayer.addTo(map);
+  // Re-add HNW on top at 70% opacity so it dominates but customers show through
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer.addTo(map); }
 }
 
 // ── Customer overlay ──────────────────────────────────────────────────────
