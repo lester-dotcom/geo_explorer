@@ -235,7 +235,22 @@ function setMapMode(mode) {
 function parseInput() {
   const paste = document.getElementById('pasteArea').value.trim();
   if (!paste) return [];
-  return paste.split(/\n/).map(l => l.trim().split(/[\t,]/)[0].trim().toUpperCase()).filter(p => /^[A-Z]{1,2}\d/.test(p));
+  const ukPostcode = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i;
+  const seen = new Set();
+  const results = [];
+  for (const line of paste.split(/\n/)) {
+    // Try each cell in the row (handles CSVs where postcode is in any column)
+    const cells = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/); // CSV-aware split
+    for (const cell of cells) {
+      const m = cell.replace(/"/g, '').match(ukPostcode);
+      if (m) {
+        const pc = m[1].toUpperCase().replace(/\s+/g, ' ').trim();
+        if (!seen.has(pc)) { seen.add(pc); results.push(pc); }
+        break; // one postcode per row
+      }
+    }
+  }
+  return results;
 }
 
 document.getElementById('fileInput').addEventListener('change', function() {
