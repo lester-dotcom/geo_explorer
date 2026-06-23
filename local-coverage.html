@@ -226,15 +226,17 @@ textarea:focus{border-color:var(--primary);}
       <button class="tog fringe active" id="btn-fringe" onclick="toggleLayer('fringe')">~ Fringe</button>
       <button class="tog outside-tog active" id="btn-outside" onclick="toggleLayer('outside')">✗ Outside</button>
     </div>
+    <div class="layer-group" id="hnw-group" style="display:none">
+      <span class="layer-label">HNW</span>
+      <button class="tog" id="btn-hnw" onclick="toggleHNW()" title="Show HNW districts within radius">✦ HNW areas</button>
+    </div>
     <div class="legend">
       <div class="legend-item"><div class="legend-dot" style="background:var(--c-inside)"></div>Inside</div>
       <div class="legend-item"><div class="legend-dot" style="background:var(--c-fringe)"></div>Fringe</div>
       <div class="legend-item"><div class="legend-dot" style="background:var(--c-outside)"></div>Outside</div>
     </div>
     <div class="export-row">
-      <button class="export-btn" id="exp-inside" onclick="exportZone('inside')" style="display:none;background:#e8f7f0;border-color:#18a058;color:#145c38">↓ Inside</button>
-      <button class="export-btn" id="exp-fringe" onclick="exportZone('fringe')" style="display:none;background:#fff7ed;border-color:#f59e0b;color:#92400e">↓ Fringe</button>
-      <button class="export-btn" id="exp-outside" onclick="exportZone('outside')" style="display:none;background:#fdf0f0;border-color:#e24b4a;color:#b91c1c">↓ Outside</button>
+      <button class="export-btn" id="exp-xlsx" onclick="exportXLSX()" style="display:none">↓ Export XLSX</button>
       <button class="export-btn" id="exp-brief" onclick="generateCoverageBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Brief</button>
     </div>
   </div>
@@ -243,6 +245,8 @@ textarea:focus{border-color:var(--primary);}
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="../hnw_data.js"></script>
 <script>
 !function(){"use strict";function t(i){return this instanceof t?(this._canvas=i="string"==typeof i?document.getElementById(i):i,this._ctx=i.getContext("2d"),this._width=i.width,this._height=i.height,this._max=1,void this.clear()):new t(i)}t.prototype={defaultRadius:25,defaultGradient:{.4:"blue",.6:"cyan",.7:"lime",.8:"yellow",1:"red"},data:function(t,i){return this._data=t,this},max:function(t){return this._max=t,this},add:function(t){return this._data.push(t),this},clear:function(){return this._data=[],this},radius:function(t,i){i=i||15;var a=this._circle=document.createElement("canvas"),s=a.getContext("2d"),e=this._r=t+i;return a.width=a.height=2*e,s.shadowOffsetX=s.shadowOffsetY=200,s.shadowBlur=i,s.shadowColor="black",s.beginPath(),s.arc(e-200,e-200,t,0,2*Math.PI,!0),s.closePath(),s.fill(),this},gradient:function(t){var i=document.createElement("canvas"),a=i.getContext("2d"),s=a.createLinearGradient(0,0,0,256);i.width=1,i.height=256;for(var e in t)s.addColorStop(e,t[e]);return a.fillStyle=s,a.fillRect(0,0,1,256),this._grad=a.getImageData(0,0,1,256).data,this},draw:function(t){this._circle||this.radius(this.defaultRadius),this._grad||this.gradient(this.defaultGradient);var i=this._ctx;i.clearRect(0,0,this._width,this._height);for(var a,s=0,e=this._data.length;e>s;s++)a=this._data[s],i.globalAlpha=Math.max(a[2]/this._max,t||.05),i.drawImage(this._circle,a[0]-this._r,a[1]-this._r);var n=i.getImageData(0,0,this._width,this._height);return this._colorize(n.data,this._grad),i.putImageData(n,0,0),this},_colorize:function(t,i){for(var a,s=3,e=t.length;e>s;s+=4)a=4*t[s],a&&(t[s-3]=i[a],t[s-2]=i[a+1],t[s-1]=i[a+2])}},window.simpleheat=t}();L.HeatLayer=(L.Layer?L.Layer:L.Class).extend({initialize:function(t,i){this._latlngs=t,L.setOptions(this,i)},setLatLngs:function(t){return this._latlngs=t,this.redraw()},addLatLng:function(t){return this._latlngs.push(t),this.redraw()},setOptions:function(t){return L.setOptions(this,t),this._heat&&this._updateOptions(),this.redraw()},redraw:function(){return!this._heat||this._frame||this._map._animating||(this._frame=L.Util.requestAnimFrame(this._redraw,this)),this},onAdd:function(t){this._map=t,this._canvas||this._initCanvas(),t._panes.overlayPane.appendChild(this._canvas),t.on("moveend",this._reset,this),t.options.zoomAnimation&&L.Browser.any3d&&t.on("zoomanim",this._animateZoom,this),this._reset()},onRemove:function(t){t.getPanes().overlayPane.removeChild(this._canvas),t.off("moveend",this._reset,this),t.options.zoomAnimation&&t.off("zoomanim",this._animateZoom,this)},addTo:function(t){return t.addLayer(this),this},_initCanvas:function(){var t=this._canvas=L.DomUtil.create("canvas","leaflet-heatmap-layer leaflet-layer"),i=L.DomUtil.testProp(["transformOrigin","WebkitTransformOrigin","msTransformOrigin"]);t.style[i]="50% 50%";var a=this._map.getSize();t.width=a.x,t.height=a.y;var s=this._map.options.zoomAnimation&&L.Browser.any3d;L.DomUtil.addClass(t,"leaflet-zoom-"+(s?"animated":"hide")),this._heat=simpleheat(t),this._updateOptions()},_updateOptions:function(){this._heat.radius(this.options.radius||this._heat.defaultRadius,this.options.blur),this.options.gradient&&this._heat.gradient(this.options.gradient),this.options.max&&this._heat.max(this.options.max)},_reset:function(){var t=this._map.containerPointToLayerPoint([0,0]);L.DomUtil.setPosition(this._canvas,t);var i=this._map.getSize();this._heat._width!==i.x&&(this._canvas.width=this._heat._width=i.x),this._heat._height!==i.y&&(this._canvas.height=this._heat._height=i.y),this._redraw()},_redraw:function(){var t,i,a,s,e,n,h,o,r,d=[],_=this._heat._r,l=this._map.getSize(),m=new L.Bounds(L.point([-_,-_]),l.add([_,_])),c=void 0===this.options.max?1:this.options.max,u=void 0===this.options.maxZoom?this._map.getMaxZoom():this.options.maxZoom,f=1/Math.pow(2,Math.max(0,Math.min(u-this._map.getZoom(),12))),g=_/2,p=[],v=this._map._getMapPanePos(),w=v.x%g,y=v.y%g;for(t=0,i=this._latlngs.length;i>t;t++)if(a=this._map.latLngToContainerPoint(this._latlngs[t]),m.contains(a)){e=Math.floor((a.x-w)/g)+2,n=Math.floor((a.y-y)/g)+2;var x=void 0!==this._latlngs[t].alt?this._latlngs[t].alt:void 0!==this._latlngs[t][2]?+this._latlngs[t][2]:1;r=x*f,p[n]=p[n]||[],s=p[n][e],s?(s[0]=(s[0]*s[2]+a.x*r)/(s[2]+r),s[1]=(s[1]*s[2]+a.y*r)/(s[2]+r),s[2]+=r):p[n][e]=[a.x,a.y,r]}for(t=0,i=p.length;i>t;t++)if(p[t])for(h=0,o=p[t].length;o>h;h++)s=p[t][h],s&&d.push([Math.round(s[0]),Math.round(s[1]),Math.min(s[2],c)]);this._heat.data(d).draw(this.options.minOpacity),this._frame=null},_animateZoom:function(t){var i=this._map.getZoomScale(t.zoom),a=this._map._getCenterOffset(t.center)._multiplyBy(-i).subtract(this._map._getMapPanePos());L.DomUtil.setTransform?L.DomUtil.setTransform(this._canvas,a,i):this._canvas.style[L.DomUtil.TRANSFORM]=L.DomUtil.getTranslateString(a)+" scale("+i+")"}}),L.heatLayer=function(t,i){return new L.HeatLayer(t,i)};
 </script>
@@ -256,6 +260,10 @@ let primaryMiles = 20;
 let layers = { dots:null, heat:null, inside:null, fringe:null, outside:null, rings:null, pins:null };
 let isolatedLocation = null; // null = show all, otherwise location name
 let layerOn = { dots:true, heat:false, inside:true, fringe:true, outside:true };
+let hnwLayer = null;
+let showHNW = false;
+// HNW data indexed by district (loaded from hnw_data.js)
+const HNW = typeof HNW_DATA !== 'undefined' ? HNW_DATA : {};
 
 const LOC_COLOURS = ['#2d5be3','#e35b2d','#9333ea','#f59e0b','#06b6d4','#ec4899','#64748b'];
 
@@ -300,6 +308,11 @@ window.addEventListener('load', () => {
 
 function darken(hex,pct){const n=parseInt(hex.slice(1),16),f=1-pct/100;return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.max(0,Math.round(v*f)).toString(16).padStart(2,'0')).join('');}
 function lighten(hex,pct){const n=parseInt(hex.slice(1),16),f=pct/100;return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.min(255,Math.round(v+(255-v)*f)).toString(16).padStart(2,'0')).join('');}
+function hnwColour(band) {
+  const colours = ['#e8e6df','#ddd8c4','#d4cb9a','#cfc070','#d4a017',
+                   '#c99010','#be7f0d','#aa6e0a','#956008','#8B6914'];
+  return colours[Math.min(band - 1, 9)];
+}
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'geoSuiteBrand') {
     window._geoSuiteBrand = e.data.settings;
@@ -450,6 +463,11 @@ function tagZones() {
     c.nearestLocation = nearest ? nearest.name : null;
     c.nearestColour   = nearest ? nearest.colour : '#888';
     c.zone = minDist <= primaryMiles ? 'inside' : minDist <= outer ? 'fringe' : 'outside';
+  }
+  // Tag HNW band from HNW_DATA
+  for (const c of results) {
+    const d = c.postcode.replace(/\s.*/, '');
+    c.hnwBand = HNW[d] ? HNW[d].hnw : null;
   }
 }
 
@@ -604,10 +622,44 @@ function rebuildLayers() {
   buildRingsAndPins();
   if (layers.dots) { map.removeLayer(layers.dots); layers.dots=null; }
   buildLayer('dots');
+  if (showHNW) drawHNWLayer();
 }
 
 function removeAllLayers() {
   for (const k of Object.keys(layers)) if(layers[k]){map.removeLayer(layers[k]);layers[k]=null;}
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer = null; }
+}
+
+function toggleHNW() {
+  showHNW = !showHNW;
+  document.getElementById('btn-hnw').classList.toggle('active', showHNW);
+  if (!showHNW) { if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer = null; } return; }
+  drawHNWLayer();
+}
+
+function drawHNWLayer() {
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer = null; }
+  if (!Object.keys(HNW).length) return;
+  const outerMiles = primaryMiles * 2;
+  const lg = L.layerGroup();
+  for (const [district, d] of Object.entries(HNW)) {
+    if (!d.lat || !d.lng) continue;
+    // Check if within outer radius of any location
+    let minDist = Infinity;
+    for (const l of locations) {
+      if (!l.lat) continue;
+      const dist = haversine(d.lat, d.lng, l.lat, l.lng);
+      if (dist < minDist) minDist = dist;
+    }
+    if (minDist > outerMiles) continue;
+    const zone = minDist <= primaryMiles ? 'primary' : 'fringe';
+    L.circleMarker([d.lat, d.lng], {
+      radius: 6, fillColor: hnwColour(d.hnw), color: '#fff',
+      fillOpacity: 0.8, weight: 1
+    }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10<br><span style="font-size:11px;color:#888">${zone === 'primary' ? '✓ Within primary radius' : '~ Within fringe radius'}</span>`).addTo(lg);
+  }
+  hnwLayer = lg;
+  hnwLayer.addTo(map);
 }
 
 function toggleLayer(key) {
@@ -652,16 +704,52 @@ function updateStats() {
 
 // ── Exports ───────────────────────────────────────────────────────────────
 function showExportBtns(show) {
-  ['exp-inside','exp-fringe','exp-outside','exp-brief'].forEach(id=>{
+  ['exp-xlsx','exp-brief'].forEach(id=>{
     document.getElementById(id).style.display = show ? 'block' : 'none';
   });
+  if (show) document.getElementById('hnw-group').style.display = '';
+  if (!show) { document.getElementById('hnw-group').style.display = 'none'; showHNW = false; }
 }
 
-function exportZone(zone) {
-  const rows=[['postcode','district','region','nearest_location','distance_miles','zone']];
-  const sorted=[...results.filter(r=>r.zone===zone)].sort((a,b)=>a.nearestDist-b.nearestDist);
-  for(const r of sorted) rows.push([r.postcode,r.district,r.region,r.nearestLocation||'',Math.round(r.nearestDist*10)/10,r.zone]);
-  dlCSV(rows, `customers_${zone}.csv`);
+function exportXLSX() {
+  if (!results.length) return;
+  const outerMiles = primaryMiles * 2;
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: All customers
+  const custRows = [['Postcode','District','Zone','HNW Band','Nearest Location','Distance (mi)','Region']];
+  [...results].sort((a,b) => a.nearestDist - b.nearestDist).forEach(r => {
+    custRows.push([r.postcode, r.district, r.zone, r.hnwBand || '—', r.nearestLocation || '—', Math.round(r.nearestDist * 10) / 10, r.region]);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custRows), 'Customers');
+
+  // Sheet 2: HNW districts in radius
+  if (Object.keys(HNW).length) {
+    const hnwRows = [['District','HNW Band','Zone','Distance to Nearest (mi)','Nearest Location','Lat','Lng']];
+    for (const [district, d] of Object.entries(HNW)) {
+      if (!d.lat || !d.lng) continue;
+      let minDist = Infinity, nearest = null;
+      for (const l of locations) {
+        if (!l.lat) continue;
+        const dist = haversine(d.lat, d.lng, l.lat, l.lng);
+        if (dist < minDist) { minDist = dist; nearest = l.name; }
+      }
+      if (minDist > outerMiles) continue;
+      const zone = minDist <= primaryMiles ? 'primary' : 'fringe';
+      hnwRows.push([district, d.hnw, zone, Math.round(minDist * 10) / 10, nearest || '—', d.lat, d.lng]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hnwRows), 'HNW In Radius');
+
+    // Sheet 3: HNW gaps — in radius but no customers
+    const customerDistricts = new Set(results.map(r => r.postcode.replace(/\s.*/, '')));
+    const gapRows = [['District','HNW Band','Zone','Distance to Nearest (mi)','Nearest Location']];
+    for (const row of hnwRows.slice(1)) {
+      if (!customerDistricts.has(row[0])) gapRows.push(row.slice(0, 5));
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(gapRows), 'HNW Gaps');
+  }
+
+  XLSX.writeFile(wb, `local_coverage_${primaryMiles}mi.xlsx`);
 }
 
 function dlCSV(rows,name){
@@ -705,6 +793,27 @@ function generateCoverageBrief() {
   const outsideDistCount={};
   outside.forEach(r=>outsideDistCount[r.district]=(outsideDistCount[r.district]||0)+1);
   const topOutside=Object.entries(outsideDistCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  // Compute HNW data for brief
+  const hnwInsideCustomers = results.filter(r => r.hnwBand && r.zone === 'inside');
+  const hnwFringeCustomers = results.filter(r => r.hnwBand && r.zone === 'fringe');
+  const hnwByDistrict = {};
+  results.filter(r => r.hnwBand).forEach(r => {
+    if (!hnwByDistrict[r.district]) hnwByDistrict[r.district] = { count: 0, band: r.hnwBand, zone: r.zone };
+    hnwByDistrict[r.district].count++;
+  });
+  const topHNWDists = Object.entries(hnwByDistrict).sort((a,b) => b[1].band - a[1].band || b[1].count - a[1].count).slice(0, 12);
+
+  // HNW gap districts: in radius, no customers
+  const customerDistricts = new Set(results.map(r => r.district));
+  const outerMi = primaryMiles * 2;
+  const hnwGaps = Object.entries(HNW).filter(([district, d]) => {
+    if (!d.lat || !d.lng) return false;
+    if (customerDistricts.has(district)) return false;
+    let minDist = Infinity;
+    for (const l of locations) { if (l.lat) minDist = Math.min(minDist, haversine(d.lat, d.lng, l.lat, l.lng)); }
+    return minDist <= outerMi;
+  }).sort((a,b) => b[1].hnw - a[1].hnw).slice(0, 20);
 
   const briefHTML=`<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
@@ -810,6 +919,26 @@ body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13
     ${topOutside.map(([d,c])=>`<div style="background:var(--red-light);border-radius:6px;padding:8px 10px;border-left:2px solid var(--red)"><div style="font-family:monospace;font-size:13px;font-weight:700">${d}</div><div style="font-size:10px;color:var(--muted);margin-top:3px">${c} customer${c!==1?'s':''}</div></div>`).join('')}
   </div>`:''}
 
+  ${topHNWDists.length ? `
+  <div class="section-title page-break">HNW customer districts</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${hnwInsideCustomers.length} customers in HNW districts inside primary radius · ${hnwFringeCustomers.length} in fringe</div>
+  <table class="loc-table">
+    <thead><tr><th>District</th><th>Customers</th><th>HNW Band</th><th>Zone</th></tr></thead>
+    <tbody>
+    ${topHNWDists.map(([d,v]) => {
+      const zoneBg = v.zone==='inside'?'var(--green)':v.zone==='fringe'?'var(--amber)':'var(--red)';
+      return \`<tr><td style="font-family:monospace;font-weight:600">${d}</td><td>${v.count}</td><td><span class="zone-badge" style="background:#f5f0e8;color:#8B6914">✦ Band ${v.band}/10</span></td><td><span class="zone-badge" style="background:${zoneBg}22;color:${zoneBg}">${v.zone}</span></td></tr>\`;
+    }).join('')}
+    </tbody>
+  </table>` : ''}
+
+  ${hnwGaps.length ? `
+  <div class="section-title">HNW opportunity gaps — in radius, no customers yet</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${hnwGaps.length} HNW districts within your service radius have no customers — these are your highest-priority untapped areas.</div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+    ${hnwGaps.map(([d,v]) => \`<div style="background:#f5f0e8;border-radius:6px;padding:8px 10px;border-left:2px solid #d4a017"><div style="font-family:monospace;font-size:13px;font-weight:700">${d}</div><div style="font-size:10px;color:#8B6914;margin-top:3px">Band ${v.hnw}/10</div></div>\`).join('')}
+  </div>` : ''}
+
   <div class="brief-footer">
     <span>${agencyName} · Geo Intelligence Suite · Local Coverage</span>
     <span>${today} · Confidential · ${primaryMiles}mi primary · ${primaryMiles*2}mi outer</span>
@@ -839,6 +968,8 @@ function clearAll() {
   document.getElementById('topPanel').style.display='none';
   document.getElementById('progressWrap').classList.remove('active');
   showExportBtns(false);
+  showHNW = false;
+  document.getElementById('btn-hnw').classList.remove('active');
   setStatus('Add at least one business location and upload customer postcodes to begin.');
   checkReady();
   map.setView([51.2,0.5],8);
