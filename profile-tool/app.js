@@ -423,6 +423,15 @@ function renderResults() {
         <option value="urban">Urban only</option>
         <option value="rural">Rural only</option>
       </select>
+      ${typeof HNW_DATA !== 'undefined' ? `
+      <label style="margin-left:12px">✦ HNW filter</label>
+      <select id="hnwFilter" onchange="updateLookalikes()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
+        <option value="0">All districts</option>
+        <option value="7">HNW band 7+ (top ~30%)</option>
+        <option value="8">HNW band 8+ (top ~20%)</option>
+        <option value="9">HNW band 9+ (top ~10%)</option>
+        <option value="10">HNW band 10 only (top ~5%)</option>
+      </select>` : ''}
     </div>
     <div id="lookalike-results"></div>
     <div class="export-row" style="margin-top:12px">
@@ -650,19 +659,26 @@ function updateLookalikes() {
 function renderLookalikes(matches) {
   const el=document.getElementById('lookalike-results');
   if(!el) return;
-  if(!matches.length){
-    el.innerHTML='<p style="font-size:12px;color:var(--muted);padding:12px 0">No districts match at this threshold — try widening the tolerance sliders.</p>';
+  const hnwMin = parseInt(document.getElementById('hnwFilter')?.value || '0');
+  const filtered = hnwMin > 0 && typeof HNW_DATA !== 'undefined'
+    ? matches.filter(m => (HNW_DATA[m.district]?.hnw || 0) >= hnwMin)
+    : matches;
+  if(!filtered.length){
+    el.innerHTML=`<p style="font-size:12px;color:var(--muted);padding:12px 0">${hnwMin > 0 ? 'No districts match at this HNW threshold — try lowering the HNW filter or widening tolerance sliders.' : 'No districts match at this threshold — try widening the tolerance sliders.'}</p>`;
     return;
   }
-  el.innerHTML=`<p style="font-size:11px;color:var(--muted);margin-bottom:10px">${matches.length} matching district${matches.length!==1?'s':''} found — not already in your customer data</p>
+  const hnwLabel = hnwMin > 0 ? ` · HNW band ${hnwMin}+ only` : '';
+  el.innerHTML=`<p style="font-size:11px;color:var(--muted);margin-bottom:10px">${filtered.length} matching district${filtered.length!==1?'s':''} found — not already in your customer data${hnwLabel}</p>
   <div class="match-grid">
-    ${matches.map(m=>{
+    ${filtered.map(m=>{
       const scoreClass=m.score>=75?'score-high':m.score>=55?'score-mid':'score-low';
+      const hnwBand = typeof HNW_DATA !== 'undefined' ? HNW_DATA[m.district]?.hnw : null;
+      const hnwTag = hnwBand ? `<span style="color:#8B6914;font-weight:600">✦ HNW ${hnwBand}/10</span><br>` : '';
       return `<div class="match-card">
         <div class="match-pc">${m.district}</div>
         <div class="match-score ${scoreClass}">${m.score}%</div>
         <div class="match-details">
-          ${m.stats.region}<br>
+          ${hnwTag}${m.stats.region}<br>
           IMD ${m.stats.imd} · HP ${m.stats.hp} · ${m.stats.rural?'Rural':'Urban'}<br>
           ${m.stats.age_young||'?'}/${m.stats.age_mid||'?'}/${m.stats.age_older||'?'}% age<br>
           ${m.stats.pct_prof||'?'}% prof · ${m.stats.pct_degree||'?'}% degree
@@ -675,23 +691,30 @@ function renderLookalikes(matches) {
 function renderUnderindex(results) {
   const el = document.getElementById('lookalike-results');
   if (!el) return;
-  if (!results.length) {
-    el.innerHTML = '<p style="font-size:12px;color:var(--muted);padding:12px 0">No underindexing districts found at this threshold — try widening the tolerance sliders, or your existing customers are well-distributed across matched districts.</p>';
+  const hnwMin = parseInt(document.getElementById('hnwFilter')?.value || '0');
+  const filtered = hnwMin > 0 && typeof HNW_DATA !== 'undefined'
+    ? results.filter(r => (HNW_DATA[r.district]?.hnw || 0) >= hnwMin)
+    : results;
+  if (!filtered.length) {
+    el.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:12px 0">${hnwMin > 0 ? 'No underindexing districts match this HNW threshold — try lowering the HNW filter.' : 'No underindexing districts found at this threshold — try widening the tolerance sliders, or your existing customers are well-distributed across matched districts.'}</p>`;
     return;
   }
-  const maxGap = results[0].gap;
+  const maxGap = filtered[0].gap;
+  const hnwLabel2 = hnwMin > 0 ? ` · HNW band ${hnwMin}+ only` : '';
   el.innerHTML = `
     <p style="font-size:11px;color:var(--muted);margin-bottom:10px">
-      ${results.length} district${results.length!==1?'s':''} underindexing — demographically matched but underperforming. Sorted by size of opportunity (expected − actual customers).
+      ${filtered.length} district${filtered.length!==1?'s':''} underindexing — demographically matched but underperforming. Sorted by size of opportunity (expected − actual customers)${hnwLabel2}.
     </p>
     <div class="match-grid">
-      ${results.map(r => {
+      ${filtered.map(r => {
         const gapPct = Math.round(r.gap / maxGap * 100);
+        const hnwBand2 = typeof HNW_DATA !== 'undefined' ? HNW_DATA[r.district]?.hnw : null;
+        const hnwTag2 = hnwBand2 ? `<span style="color:#8B6914;font-weight:600">✦ HNW ${hnwBand2}/10</span><br>` : '';
         return `<div class="match-card underindex-card">
           <div class="match-pc">${r.district}</div>
           <div class="match-score underindex-score">Index ${r.index}</div>
           <div class="match-details">
-            ${r.stats.region}<br>
+            ${hnwTag2}${r.stats.region}<br>
             IMD ${r.stats.imd} · HP ${r.stats.hp} · Profile ${r.profileScore}%<br>
             <span style="color:#b33030;font-weight:500">${r.count} actual vs ${r.expectedCount} expected</span>
           </div>
