@@ -220,16 +220,20 @@ function drawHNWLayer() {
   const lg = L.layerGroup();
   for (const [district, d] of districts) {
     L.circleMarker([d.lat, d.lng], {
-      radius: 10, fillColor: hnwColour(d.hnw), color: hnwColour(d.hnw),
-      fillOpacity: 0.25, weight: 2.5
+      radius: 6, fillColor: hnwColour(d.hnw), color: '#fff',
+      fillOpacity: 0.8, weight: 1
     }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10`).addTo(lg);
   }
   hnwLayer = lg;
   lg.addTo(map);
 
   // Update stats
+  const sectorCount = districts.reduce((s, [d]) => {
+    for (let i = 0; i <= 9; i++) { if (typeof VALID_SECTORS !== 'undefined' && VALID_SECTORS.has(`${d} ${i}`)) s++; }
+    return s;
+  }, 0);
   document.getElementById('statDistricts').textContent = districts.length.toLocaleString();
-  document.getElementById('statSectors').textContent = (districts.length * 10).toLocaleString();
+  document.getElementById('statSectors').textContent = sectorCount ? sectorCount.toLocaleString() : (districts.length * 3).toLocaleString();
   document.getElementById('exportBtn').disabled = false;
 }
 
@@ -336,14 +340,13 @@ async function overlayCustomers() {
   for (const r of overlayResults) {
     const inHNW = r.hnwBand && r.hnwBand >= Math.ceil(10 * (1 - currentThreshold / 100));
     L.circleMarker([r.lat, r.lng], {
-      radius: 5, fillColor: inHNW ? '#aec90b' : '#e53e3e', color: '#fff',
-      fillOpacity: 0.95, weight: 2
+      radius: 4, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
+      fillOpacity: 1, weight: 1.5
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
-  // Add customer layer first so HNW rings render on top
+  // Customer layer added after HNW so customer dots appear on top
   customerLayer.addTo(map);
-  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer.addTo(map); }
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('btnOverlay').style.display = '';
   document.getElementById('clearOverlayBtn').style.display = '';
