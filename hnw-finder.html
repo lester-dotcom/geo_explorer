@@ -79,6 +79,13 @@
 
     #map { flex: 1; }
 
+    .band-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 11px; }
+    .band-label { width: 52px; font-family: 'DM Mono', monospace; font-weight: 500; color: var(--pd-slate); flex-shrink: 0; }
+    .band-bar-wrap { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .band-bar-fill { height: 100%; border-radius: 3px; }
+    .band-count { width: 28px; text-align: right; color: var(--muted); flex-shrink: 0; }
+    .band-pct { width: 32px; text-align: right; color: var(--muted); flex-shrink: 0; font-size: 10px; }
+
     .overlay-badge { position: absolute; bottom: 10px; left: 10px; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 11px; color: var(--muted); box-shadow: 0 2px 6px rgba(0,0,0,.08); pointer-events: none; display: none; }
   </style>
 </head>
@@ -129,12 +136,17 @@
 
     <div id="statusMsg" class="status-msg">Adjust the slider to explore high-net-worth postcode districts across England.</div>
 
+    <div id="customerReport" style="display:none">
+      <div class="section-label" style="margin-bottom:8px">Customer HNW breakdown</div>
+      <div id="reportSummary" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+      <div id="reportBands"></div>
+    </div>
+
     <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
       <div class="format-hint" style="line-height:1.7">
-        <strong>Data source</strong><br>
-        ONS Indices of Multiple Deprivation 2019<br>
-        Income deprivation sub-domain scores<br>
-        Aggregated to postcode district level
+        <strong>Scores out of 10</strong><br>
+        Based on ONS Income Deprivation 2019.<br>
+        Band 10 = lowest income deprivation nationally (most affluent ~10%). Band 1 = highest deprivation. Scored at postcode district level from LSOA income data.
       </div>
     </div>
 
@@ -218,7 +230,7 @@ function onSliderChange(val) {
   document.getElementById('thresholdDisplay').textContent = `${val}%`;
   document.getElementById('thresholdSub').textContent = `Top ${val}% of districts by affluence`;
   drawHNWLayer();
-  if (overlayResults.length) updateOverlayBadge();
+  if (overlayResults.length) { updateOverlayBadge(); renderCustomerReport(); }
 }
 
 // ── Map mode toggle ───────────────────────────────────────────────────────
@@ -328,7 +340,53 @@ async function overlayCustomers() {
   document.getElementById('overlayBtn').disabled = false;
   setMapMode('overlay');
   updateOverlayBadge();
+  renderCustomerReport();
   document.getElementById('exportBtn').disabled = false;
+}
+
+function renderCustomerReport() {
+  if (!overlayResults.length) return;
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const total = overlayResults.length;
+  const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
+  const noData = overlayResults.filter(r => !r.hnwBand).length;
+
+  // Count by band
+  const bandCounts = {};
+  for (const r of overlayResults) {
+    const b = r.hnwBand || 'n/a';
+    bandCounts[b] = (bandCounts[b] || 0) + 1;
+  }
+  const maxCount = Math.max(...Object.values(bandCounts));
+
+  document.getElementById('customerReport').style.display = 'block';
+  document.getElementById('reportSummary').innerHTML =
+    `<strong>${inHNW.toLocaleString()}</strong> of <strong>${total.toLocaleString()}</strong> customers (${Math.round(inHNW/total*100)}%) are in your current HNW threshold (band ${cutoff}+).${noData ? ` <span style="color:var(--muted)">${noData} outside coverage area.</span>` : ''}`;
+
+  // Bands 10 down to 1
+  const rows = [];
+  for (let b = 10; b >= 1; b--) {
+    const count = bandCounts[b] || 0;
+    if (count === 0) continue;
+    const pct = Math.round(count / total * 100);
+    const isAbove = b >= cutoff;
+    const colour = hnwColour(b);
+    rows.push(`<div class="band-row">
+      <span class="band-label" style="color:${isAbove ? '#8B6914' : 'var(--muted)'}">Band ${b}</span>
+      <div class="band-bar-wrap"><div class="band-bar-fill" style="width:${Math.round(count/maxCount*100)}%;background:${colour}"></div></div>
+      <span class="band-count">${count}</span>
+      <span class="band-pct">${pct}%</span>
+    </div>`);
+  }
+  if (bandCounts['n/a']) {
+    rows.push(`<div class="band-row">
+      <span class="band-label" style="color:var(--muted)">No data</span>
+      <div class="band-bar-wrap"><div class="band-bar-fill" style="width:${Math.round(bandCounts['n/a']/maxCount*100)}%;background:var(--border)"></div></div>
+      <span class="band-count">${bandCounts['n/a']}</span>
+      <span class="band-pct">${Math.round(bandCounts['n/a']/total*100)}%</span>
+    </div>`);
+  }
+  document.getElementById('reportBands').innerHTML = rows.join('');
 }
 
 function updateOverlayBadge() {
@@ -349,6 +407,7 @@ function clearOverlay() {
   document.getElementById('btnOverlay').style.display = 'none';
   document.getElementById('clearOverlayBtn').style.display = 'none';
   document.getElementById('overlayBadge').style.display = 'none';
+  document.getElementById('customerReport').style.display = 'none';
   setMapMode('hnw');
 }
 
