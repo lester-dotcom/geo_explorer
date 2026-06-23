@@ -163,6 +163,7 @@
         <div class="hnw-gradient"></div>
         <span>Higher affluence</span>
       </div>
+      <button class="export-btn" id="briefBtn" onclick="generateHNWBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Client brief</button>
       <button class="export-btn" id="exportBtn" onclick="exportXLSX()" disabled>Export XLSX ↓</button>
     </div>
     <div style="position:relative;flex:1;display:flex;flex-direction:column">
@@ -219,8 +220,8 @@ function drawHNWLayer() {
   const lg = L.layerGroup();
   for (const [district, d] of districts) {
     L.circleMarker([d.lat, d.lng], {
-      radius: 7, fillColor: hnwColour(d.hnw), color: '#fff',
-      fillOpacity: 0.85, weight: 1
+      radius: 10, fillColor: hnwColour(d.hnw), color: hnwColour(d.hnw),
+      fillOpacity: 0.25, weight: 2.5
     }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10`).addTo(lg);
   }
   hnwLayer = lg;
@@ -340,10 +341,13 @@ async function overlayCustomers() {
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
+  // Add customer layer first so HNW rings render on top
   customerLayer.addTo(map);
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer.addTo(map); }
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('btnOverlay').style.display = '';
   document.getElementById('clearOverlayBtn').style.display = '';
+  document.getElementById('briefBtn').style.display = '';
   document.getElementById('overlayBtn').disabled = false;
   setMapMode('overlay');
   updateOverlayBadge();
@@ -419,6 +423,176 @@ function clearOverlay() {
   setMapMode('hnw');
 }
 
+// ── Brief ─────────────────────────────────────────────────────────────────
+function generateHNWBrief() {
+  let branding = {};
+  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  const agencyName = branding.name    || 'Pratt Digital';
+  const primary    = branding.primary || '#d4a017';
+  const secondary  = branding.secondary || '#8B6914';
+  const logoSrc    = branding.logo    || '';
+
+  function darken(hex, pct) {
+    const n=parseInt(hex.slice(1),16),f=1-pct/100;
+    return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.max(0,Math.round(v*f)).toString(16).padStart(2,'0')).join('');
+  }
+  function lighten(hex, pct) {
+    const n=parseInt(hex.slice(1),16),f=pct/100;
+    return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.min(255,Math.round(v+(255-v)*f)).toString(16).padStart(2,'0')).join('');
+  }
+
+  const primaryDark  = darken(primary, 20);
+  const primaryLight = lighten(primary, 88);
+  const today = new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'});
+
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const allHNW = getFilteredDistricts().sort((a,b) => b[1].hnw - a[1].hnw);
+  const totalDistricts = allHNW.length;
+  const totalSectors = allHNW.reduce((s, [d]) => {
+    let n = 0;
+    for (let i = 0; i <= 9; i++) { if (typeof VALID_SECTORS === 'undefined' || VALID_SECTORS.has(`${d} ${i}`)) n++; }
+    return s + n;
+  }, 0);
+
+  // Top districts by band
+  const top12 = allHNW.slice(0, 12);
+
+  // Customer breakdown
+  const hasCustomers = overlayResults.length > 0;
+  const totalCustomers = overlayResults.length;
+  const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
+  const bandCounts = {};
+  for (const r of overlayResults) { const b = r.hnwBand || 0; bandCounts[b] = (bandCounts[b]||0)+1; }
+
+  // Insights
+  const insights = [];
+  insights.push(`England has <strong>${Object.keys(HNW_DATA).length.toLocaleString()}</strong> scored postcode districts. At the current threshold, <strong>${totalDistricts.toLocaleString()}</strong> qualify as HNW (band ${cutoff}+), covering <strong>${totalSectors.toLocaleString()}</strong> postcode sectors.`);
+  if (top12.length >= 3) {
+    const top3 = top12.slice(0,3).map(([d,v]) => `${d} (band ${v.hnw})`).join(', ');
+    insights.push(`The highest-scoring districts are <strong>${top3}</strong>.`);
+  }
+  if (hasCustomers) {
+    const pct = Math.round(inHNW/totalCustomers*100);
+    insights.push(`Of <strong>${totalCustomers.toLocaleString()}</strong> customers analysed, <strong>${inHNW.toLocaleString()}</strong> (${pct}%) are located in HNW districts at the current threshold.`);
+    const topBand = Object.entries(bandCounts).filter(([b]) => b > 0).sort((a,b) => b[1]-a[1])[0];
+    if (topBand) insights.push(`The most common HNW band among customers is <strong>band ${topBand[0]}</strong> with ${topBand[1]} customers.`);
+  }
+
+  const briefHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HNW Area Analysis — ${agencyName}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--primary:${primary};--primary-dark:${primaryDark};--primary-light:${primaryLight};--secondary:${secondary};--slate:#4c565c;--muted:#6b6960;--border:#e2e0d8;--bg:#f5f4f0;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13px;line-height:1.6;}
+  @media print{body{font-size:11px;}.no-print{display:none!important;}.card{break-inside:avoid;}}
+  @page{margin:15mm;size:A4;}
+  .page{max-width:860px;margin:0 auto;padding:30px;}
+  .brief-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:4px solid var(--primary);margin-bottom:24px;}
+  .header-logo{max-height:44px;max-width:180px;object-fit:contain;}
+  .header-logo.placeholder{background:var(--primary);color:#fff;font-weight:700;font-size:14px;padding:8px 14px;border-radius:6px;}
+  .header-right{text-align:right;}
+  .brief-title{font-size:20px;font-weight:700;color:var(--slate);}
+  .brief-meta{font-size:11px;color:var(--muted);margin-top:3px;}
+  .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--primary-dark);margin:20px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+  .stat-card{background:var(--bg);border-radius:8px;padding:10px 12px;border-left:3px solid var(--primary);}
+  .stat-card h4{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;}
+  .stat-card .val{font-size:20px;font-weight:700;color:var(--slate);line-height:1;}
+  .stat-card .sub{font-size:10px;color:var(--muted);margin-top:3px;}
+  .insight-box{background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:12px 16px;margin-bottom:16px;}
+  .insight-item{font-size:12px;line-height:1.7;padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.06);}
+  .insight-item:last-child{border-bottom:none;}
+  .insight-item::before{content:'→ ';color:var(--primary-dark);font-weight:700;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px;}
+  .bar-label{min-width:70px;color:var(--muted);font-size:10px;font-family:monospace;}
+  .bar-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:3px;}
+  .bar-val{min-width:30px;text-align:right;font-size:10px;font-weight:600;}
+  .dist-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+  .dist-item{background:var(--bg);border-radius:6px;padding:7px 9px;border-left:2px solid var(--primary);text-align:center;}
+  .dist-item .code{font-family:monospace;font-size:13px;font-weight:700;}
+  .dist-item .cnt{font-size:10px;color:var(--muted);margin-top:2px;}
+  .brief-footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted);}
+  .print-bar{position:fixed;bottom:20px;right:20px;display:flex;gap:8px;z-index:100;}
+  .print-btn{padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;}
+  .print-btn.primary{background:var(--primary);color:#fff;}
+  .print-btn.secondary{background:#fff;color:var(--slate);border:1px solid var(--border);}
+  .hnw-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:var(--primary-light);color:var(--primary-dark);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brief-header">
+    ${logoSrc ? `<img class="header-logo" src="${logoSrc}" alt="${agencyName}">` : `<div class="header-logo placeholder">${agencyName}</div>`}
+    <div class="header-right">
+      <div class="brief-title">HNW Area Analysis</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite</div>
+    </div>
+  </div>
+
+  <div class="section-title">Overview</div>
+  <div class="stat-grid">
+    <div class="stat-card"><h4>HNW threshold</h4><div class="val">Top ${currentThreshold}%</div><div class="sub">Band ${cutoff}+ of 10</div></div>
+    <div class="stat-card"><h4>HNW districts</h4><div class="val">${totalDistricts.toLocaleString()}</div><div class="sub">Qualifying areas</div></div>
+    <div class="stat-card"><h4>HNW sectors</h4><div class="val">${totalSectors.toLocaleString()}</div><div class="sub">Targetable sectors</div></div>
+    ${hasCustomers ? `<div class="stat-card"><h4>Customers in HNW</h4><div class="val">${Math.round(inHNW/totalCustomers*100)}%</div><div class="sub">${inHNW.toLocaleString()} of ${totalCustomers.toLocaleString()}</div></div>` : `<div class="stat-card"><h4>Data source</h4><div class="val" style="font-size:13px">ONS IMD</div><div class="sub">Income deprivation 2019</div></div>`}
+  </div>
+
+  <div class="section-title">Key observations</div>
+  <div class="insight-box">
+    ${insights.map(i => `<div class="insight-item">${i}</div>`).join('')}
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="section-title">Top HNW districts</div>
+      ${top12.map(([d, v]) => `
+        <div class="bar-row">
+          <span class="bar-label">${d}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(v.hnw/10*100)}%;background:${hnwColour(v.hnw)}"></div></div>
+          <span class="bar-val">Band ${v.hnw}</span>
+        </div>`).join('')}
+    </div>
+    ${hasCustomers ? `
+    <div>
+      <div class="section-title">Customer breakdown by HNW band</div>
+      ${[10,9,8,7,6,5,4,3,2,1].filter(b => bandCounts[b]).map(b => `
+        <div class="bar-row">
+          <span class="bar-label">Band ${b}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(bandCounts[b]/totalCustomers*100)}%;background:${hnwColour(b)}"></div></div>
+          <span class="bar-val">${bandCounts[b]} (${Math.round(bandCounts[b]/totalCustomers*100)}%)</span>
+        </div>`).join('')}
+      ${bandCounts[0] ? `<div class="bar-row"><span class="bar-label" style="color:var(--muted)">No data</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(bandCounts[0]/totalCustomers*100)}%;background:var(--border)"></div></div><span class="bar-val">${bandCounts[0]}</span></div>` : ''}
+    </div>` : `
+    <div>
+      <div class="section-title">All qualifying districts</div>
+      <div class="dist-grid">
+        ${allHNW.slice(0,20).map(([d,v]) => `<div class="dist-item"><div class="code">${d}</div><div class="cnt"><span class="hnw-badge">Band ${v.hnw}</span></div></div>`).join('')}
+      </div>
+    </div>`}
+  </div>
+
+  <div class="brief-footer">
+    <span>${agencyName} · Geo Intelligence Suite · HNW scores based on ONS Income Deprivation 2019</span>
+    <span>Generated ${today} · Confidential</span>
+  </div>
+</div>
+<div class="print-bar no-print">
+  <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
+  <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+
 // ── Export ────────────────────────────────────────────────────────────────
 function exportXLSX() {
   const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
@@ -438,7 +612,7 @@ function exportXLSX() {
   filtered.forEach(([district, d]) => {
     for (let i = 0; i <= 9; i++) {
       const sector = `${district} ${i}`;
-      if (typeof VALID_SECTORS !== 'undefined' && !VALID_SECTORS.has(sector)) continue;
+      if (typeof VALID_SECTORS === 'undefined' || !VALID_SECTORS.has(sector)) continue;
       secRows.push([sector, d.hnw, district]);
     }
   });

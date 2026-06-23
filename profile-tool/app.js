@@ -990,7 +990,7 @@ function exportLookalikes() {
     for (const m of profileData.lookalikes)
       for (let i = 0; i <= 9; i++) {
         const sector = `${m.district} ${i}`;
-        if (typeof VALID_SECTORS !== 'undefined' && !VALID_SECTORS.has(sector)) continue;
+        if (typeof VALID_SECTORS === 'undefined' || !VALID_SECTORS.has(sector)) continue;
         secRows.push([sector, m.score, m.district, m.stats.region]);
       }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
@@ -1012,7 +1012,7 @@ function exportLookalikes() {
     for (const r of profileData.underindex)
       for (let i = 0; i <= 9; i++) {
         const sector = `${r.district} ${i}`;
-        if (typeof VALID_SECTORS !== 'undefined' && !VALID_SECTORS.has(sector)) continue;
+        if (typeof VALID_SECTORS === 'undefined' || !VALID_SECTORS.has(sector)) continue;
         secRows.push([sector, r.index, r.profileScore, r.district, r.stats.region]);
       }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
