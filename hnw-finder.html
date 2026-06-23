@@ -136,13 +136,13 @@
 
     <div id="statusMsg" class="status-msg">Adjust the slider to explore high-net-worth postcode districts across England.</div>
 
-    <div id="customerReport" style="display:none">
+    <div id="customerReport" style="display:none;padding-top:12px;border-top:1px solid var(--border)">
       <div class="section-label" style="margin-bottom:8px">Customer HNW breakdown</div>
       <div id="reportSummary" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
       <div id="reportBands"></div>
     </div>
 
-    <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
+    <div style="padding-top:12px;border-top:1px solid var(--border)">
       <div class="format-hint" style="line-height:1.7">
         <strong>Scores out of 10</strong><br>
         Based on ONS Income Deprivation 2019.<br>
@@ -197,13 +197,19 @@ function hnwColour(band) {
 }
 
 // ── Core: draw HNW districts ──────────────────────────────────────────────
+function validCoords(lat, lng) {
+  if (!lat || !lng) return false;
+  // Tighter mainland GB + NI bounds — excludes open-sea coordinates
+  if (lat < 49.9 || lat > 60.9) return false;
+  if (lng < -7.6 || lng > 1.8) return false;
+  // Exclude the patch of open Atlantic/Celtic Sea west of Cornwall
+  if (lat < 51.5 && lng < -5.8) return false;
+  return true;
+}
+
 function getFilteredDistricts() {
   const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
-  // Filter out bad coordinates (sea / offshore) — keep only mainland England/Wales/Scotland bounds
-  return Object.entries(HNW_DATA).filter(([, d]) =>
-    d.hnw >= cutoff && d.lat && d.lng &&
-    d.lat > 49.8 && d.lat < 61 && d.lng > -8 && d.lng < 2
-  );
+  return Object.entries(HNW_DATA).filter(([, d]) => d.hnw >= cutoff && validCoords(d.lat, d.lng));
 }
 
 function drawHNWLayer() {
@@ -317,7 +323,7 @@ async function overlayCustomers() {
 
   overlayResults = postcodes.map(pc => {
     const r = geo[pc];
-    if (!r) return null;
+    if (!r || !validCoords(r.lat, r.lng)) return null;
     const hnwEntry = HNW_DATA[r.district];
     return { postcode: pc, lat: r.lat, lng: r.lng, district: r.district,
       hnwBand: hnwEntry ? hnwEntry.hnw : null };
@@ -387,6 +393,7 @@ function renderCustomerReport() {
     </div>`);
   }
   document.getElementById('reportBands').innerHTML = rows.join('');
+  document.getElementById('customerReport').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function updateOverlayBadge() {
