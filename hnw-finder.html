@@ -283,7 +283,7 @@ function redrawCustomerLayer() {
     if (!inHNW && !showOutHNW) continue;
     L.circleMarker([r.lat, r.lng], {
       radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
-      fillOpacity: 0.4, weight: 1.5
+      fillOpacity: 0.3, weight: 1.5
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
@@ -600,6 +600,24 @@ function generateHNWBrief() {
       </div>
     </div>`}
   </div>
+
+  ${hasCustomers ? `
+  <div class="two-col" style="margin-top:20px">
+    <div>
+      <div class="section-title">Top customers in HNW areas</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">Postcode</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">District</th><th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">HNW Band</th></tr></thead>
+        <tbody>${overlayResults.filter(r=>r.hnwBand&&r.hnwBand>=cutoff).sort((a,b)=>b.hnwBand-a.hnwBand).slice(0,15).map(r=>`<tr><td style="padding:3px 6px;font-family:monospace;font-size:11px">${r.postcode}</td><td style="padding:3px 6px;color:var(--muted)">${r.district}</td><td style="padding:3px 6px;text-align:right"><span class="hnw-badge">${r.hnwBand}/10</span></td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div>
+      <div class="section-title">Customers outside HNW areas</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">Postcode</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">District</th><th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">HNW Band</th></tr></thead>
+        <tbody>${overlayResults.filter(r=>!r.hnwBand||r.hnwBand<cutoff).sort((a,b)=>(b.hnwBand||0)-(a.hnwBand||0)).slice(0,15).map(r=>`<tr><td style="padding:3px 6px;font-family:monospace;font-size:11px">${r.postcode}</td><td style="padding:3px 6px;color:var(--muted)">${r.district}</td><td style="padding:3px 6px;text-align:right;color:var(--muted)">${r.hnwBand?`Band ${r.hnwBand}`:'No data'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>` : ''}
 
   <div class="brief-footer">
     <span>${agencyName} · Geo Intelligence Suite · HNW scores based on ONS Income Deprivation 2019</span>
