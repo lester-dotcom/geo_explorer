@@ -603,23 +603,35 @@ function generateHNWBrief() {
     </div>`}
   </div>
 
-  ${hasCustomers ? `
+  ${hasCustomers ? (() => {
+    // Group by district
+    const byDistrict = {};
+    for (const r of overlayResults) {
+      if (!byDistrict[r.district]) byDistrict[r.district] = { count: 0, hnwBand: r.hnwBand, inHNW: r.hnwBand && r.hnwBand >= cutoff };
+      byDistrict[r.district].count++;
+    }
+    const inRows = Object.entries(byDistrict).filter(([,v])=>v.inHNW).sort((a,b)=>b[1].hnwBand-a[1].hnwBand||b[1].count-a[1].count).slice(0,15);
+    const outRows = Object.entries(byDistrict).filter(([,v])=>!v.inHNW).sort((a,b)=>(b[1].hnwBand||0)-(a[1].hnwBand||0)||b[1].count-a[1].count).slice(0,15);
+    const row = (d,v,badge) => `<tr><td style="padding:3px 6px;font-family:monospace;font-weight:600">${d}</td><td style="padding:3px 6px;text-align:center"><strong>${v.count}</strong></td><td style="padding:3px 6px;text-align:right">${badge}</td></tr>`;
+    const th = (t) => `<th style="text-align:${t==='Customers'?'center':'left'};padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">${t}</th>`;
+    return `
   <div class="two-col" style="margin-top:20px">
     <div>
-      <div class="section-title">Top customers in HNW areas</div>
+      <div class="section-title">Top districts — customers in HNW</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
-        <thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">Postcode</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">District</th><th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">HNW Band</th></tr></thead>
-        <tbody>${overlayResults.filter(r=>r.hnwBand&&r.hnwBand>=cutoff).sort((a,b)=>b.hnwBand-a.hnwBand).slice(0,15).map(r=>`<tr><td style="padding:3px 6px;font-family:monospace;font-size:11px">${r.postcode}</td><td style="padding:3px 6px;color:var(--muted)">${r.district}</td><td style="padding:3px 6px;text-align:right"><span class="hnw-badge">${r.hnwBand}/10</span></td></tr>`).join('')}</tbody>
+        <thead><tr>${th('District')}${th('Customers')}${th('HNW Band')}</tr></thead>
+        <tbody>${inRows.map(([d,v])=>row(d,v,`<span class="hnw-badge">${v.hnwBand}/10</span>`)).join('')}</tbody>
       </table>
     </div>
     <div>
-      <div class="section-title">Customers outside HNW areas</div>
+      <div class="section-title">Top districts — customers outside HNW</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
-        <thead><tr><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">Postcode</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">District</th><th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">HNW Band</th></tr></thead>
-        <tbody>${overlayResults.filter(r=>!r.hnwBand||r.hnwBand<cutoff).sort((a,b)=>(b.hnwBand||0)-(a.hnwBand||0)).slice(0,15).map(r=>`<tr><td style="padding:3px 6px;font-family:monospace;font-size:11px">${r.postcode}</td><td style="padding:3px 6px;color:var(--muted)">${r.district}</td><td style="padding:3px 6px;text-align:right;color:var(--muted)">${r.hnwBand?`Band ${r.hnwBand}`:'No data'}</td></tr>`).join('')}</tbody>
+        <thead><tr>${th('District')}${th('Customers')}${th('HNW Band')}</tr></thead>
+        <tbody>${outRows.map(([d,v])=>row(d,v,`<span style="color:var(--muted);font-size:10px">${v.hnwBand?`Band ${v.hnwBand}`:'No data'}</span>`)).join('')}</tbody>
       </table>
     </div>
-  </div>` : ''}
+  </div>`;
+  })() : ''}
 
   <div class="brief-footer">
     <span>${agencyName} · Geo Intelligence Suite · HNW scores based on ONS Income Deprivation 2019</span>
