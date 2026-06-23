@@ -266,7 +266,7 @@ footer {
   <div class="hero">
     <div class="hero-badge">Client Intelligence</div>
     <h2>Understand where your customers are — and where they should be</h2>
-    <p>A suite of tools for postcode-level customer analysis, geographic targeting, and demographic profiling. No server required — runs entirely in your browser.</p>
+    <p>Two powerful tools for postcode-level customer analysis, geographic targeting, and demographic profiling. No server required — runs entirely in your browser.</p>
   </div>
 
   <div class="tools">
@@ -337,45 +337,24 @@ footer {
       </div>
     </a>
 
-    <a class="tool-card" id="card-local" href="#" onclick="loadTool('local-coverage.html', event)">
+    <a class="tool-card" id="card-hnw" href="#" onclick="loadTool('hnw-finder.html', event)">
       <div class="tool-header">
-        <div class="tool-icon" style="background:#f0f4ff">📍</div>
+        <div class="tool-icon" style="background:#fdf8ec">✦</div>
         <div class="tool-meta">
-          <span class="tag" style="background:#f0f4ff;color:#1e40af">Coverage</span>
-          <h3>Local Coverage Map</h3>
+          <span class="tag" style="background:#fdf8ec;color:#8B6914">Premium</span>
+          <h3>HNW Area Finder</h3>
         </div>
       </div>
-      <p class="tool-desc">Map multiple store or branch locations and visualise catchment zones. Upload customer postcodes to see coverage rings, fringe areas and gaps across all your sites.</p>
+      <p class="tool-desc">Identify high-net-worth postcode districts across England using ONS income deprivation data. Overlay your customers to see existing HNW coverage and find untapped affluent areas.</p>
       <div class="tool-features">
-        <div class="tool-feature">Multi-location catchment zones</div>
-        <div class="tool-feature">Primary, fringe &amp; outside rings</div>
-        <div class="tool-feature">Dot, heatmap &amp; district views</div>
-        <div class="tool-feature">Coverage brief PDF export</div>
+        <div class="tool-feature">Income-ranked district map</div>
+        <div class="tool-feature">Adjustable affluence threshold</div>
+        <div class="tool-feature">Customer overlay &amp; coverage badge</div>
+        <div class="tool-feature">Export districts, sectors &amp; postcodes</div>
       </div>
       <div class="tool-cta">
-        <button class="tool-btn" style="background:#1e40af;color:#fff" onclick="event.stopPropagation(); loadTool('local-coverage.html', event)">Open tool →</button>
-        <span class="tool-note">Best for multi-site businesses</span>
-      </div>
-    </a>
-
-    <a class="tool-card" id="card-brands" href="#" onclick="loadTool('brand-map.html', event)">
-      <div class="tool-header">
-        <div class="tool-icon" style="background:#fff7ed">🏪</div>
-        <div class="tool-meta">
-          <span class="tag" style="background:#fff7ed;color:#c2410c">Opportunity</span>
-          <h3>Brand Opportunity Mapper</h3>
-        </div>
-      </div>
-      <p class="tool-desc">Overlay major UK retail brand locations on a map to identify gaps and opportunities. Select from Waitrose, M&amp;S, Sainsbury's, Costa and more — then compare with your own customer data.</p>
-      <div class="tool-features">
-        <div class="tool-feature">15 major UK retail brands</div>
-        <div class="tool-feature">Multi-brand overlay comparison</div>
-        <div class="tool-feature">Optional customer postcode upload</div>
-        <div class="tool-feature">Opportunity brief PDF export</div>
-      </div>
-      <div class="tool-cta">
-        <button class="tool-btn" style="background:#c2410c;color:#fff" onclick="event.stopPropagation(); loadTool('brand-map.html', event)">Open tool →</button>
-        <span class="tool-note">Powered by OpenStreetMap live data</span>
+        <button class="tool-btn" style="background:#8B6914;color:#fff" onclick="event.stopPropagation(); loadTool('hnw-finder.html', event)">Open tool →</button>
+        <span class="tool-note">ONS income data · 2,133 districts</span>
       </div>
     </a>
 
@@ -408,11 +387,6 @@ footer {
           <div class="logo-upload-text" id="logoUploadText">📂 Upload logo (PNG, JPG, SVG)<br><span style="font-size:10px;opacity:.7">Recommended: max 200px tall</span></div>
         </label>
         <button class="btn-reset" style="font-size:11px;padding:6px 10px;margin-top:4px" onclick="resetLogo()">↺ Reset to default logo</button>
-        <div style="margin-top:10px">
-          <div class="settings-label" style="margin-bottom:4px;color:#92580a">🔗 Logo URL — needed for logo to appear on shared links</div>
-          <input class="settings-input" id="inputLogoUrl" type="url" placeholder="https://yoursite.com/logo.png" style="font-size:12px;margin-bottom:6px">
-          <div style="font-size:10px;color:#92580a;line-height:1.6">Uploaded logos only show on <em>your</em> browser. Paste a URL here so it travels with the link.<br><strong>Quick way:</strong> right-click your logo on your website → <em>Copy image address</em>.</div>
-        </div>
       </div>
 
       <div class="settings-section">
@@ -454,7 +428,6 @@ footer {
     </div>
     <div class="settings-footer">
       <button class="btn-save" onclick="saveSettings()">Save &amp; apply</button>
-      <button id="shareBtn" class="btn-share" onclick="copyShareableLink()">🔗 Copy shareable link</button>
       <button class="btn-reset" onclick="resetAll()">Reset all</button>
     </div>
   </div>
@@ -495,43 +468,23 @@ window.addEventListener('load', () => {
   document.getElementById('inputName').addEventListener('input', function() {
     document.getElementById('previewName').textContent = this.value || DEFAULT_NAME;
   });
-  // Logo file upload — compress to ≤200px tall, 70% JPEG so it fits in shareable URLs
+  // Logo file upload
   document.getElementById('logoFileInput').addEventListener('change', function() {
     const file = this.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_H = 200;
-        const scale = img.height > MAX_H ? MAX_H / img.height : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width  = Math.round(img.width  * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL('image/jpeg', 0.70);
-        const preview = document.getElementById('logoPreview');
-        preview.src = compressed; preview.classList.add('visible');
-        document.getElementById('previewLogo').src = compressed;
-        document.getElementById('logoUploadText').style.display = 'none';
-        document.getElementById('logoUploadLabel').style.borderStyle = 'solid';
-      };
-      img.src = e.target.result;
+      const src = e.target.result;
+      const preview = document.getElementById('logoPreview');
+      preview.src = src; preview.classList.add('visible');
+      document.getElementById('previewLogo').src = src;
+      document.getElementById('logoUploadText').style.display = 'none';
+      document.getElementById('logoUploadLabel').style.borderStyle = 'solid';
     };
     reader.readAsDataURL(file);
   });
 });
 
-// ── URL brand param helpers ───────────────────────────────────────────────
-function getBrandFromUrl() {
-  try {
-    const b = new URLSearchParams(window.location.search).get('brand');
-    return b ? JSON.parse(atob(b)) : null;
-  } catch(e) { return null; }
-}
-
 function loadSettings() {
-  const fromUrl = getBrandFromUrl();
-  if (fromUrl) return fromUrl;
   try {
     const s = localStorage.getItem('geoSuiteSettings');
     return s ? JSON.parse(s) : {};
@@ -543,7 +496,7 @@ function applySettings(s) {
   const primary   = s.primary   || DEFAULT_PRIMARY;
   const secondary = s.secondary || DEFAULT_SECONDARY;
   const name      = s.name      || DEFAULT_NAME;
-  const logo      = s.logoUrl   || s.logo || DEFAULT_LOGO;
+  const logo      = s.logo      || DEFAULT_LOGO;
 
   root.style.setProperty('--primary',      primary);
   root.style.setProperty('--primary-dark', darken(primary, 15));
@@ -562,8 +515,7 @@ function populateForm(s) {
   const name      = s.name      || DEFAULT_NAME;
   const logo      = s.logo      || DEFAULT_LOGO;
 
-  document.getElementById('inputName').value    = name;
-  document.getElementById('inputLogoUrl').value = s.logoUrl || '';
+  document.getElementById('inputName').value = name;
   document.getElementById('colourPrimary').value   = primary;
   document.getElementById('colourSecondary').value = secondary;
   document.getElementById('hexPrimary').textContent   = primary;
@@ -573,25 +525,24 @@ function populateForm(s) {
 
   const preview = document.getElementById('logoPreview');
   preview.src = logo; preview.classList.add('visible');
-  document.getElementById('previewLogo').src = s.logoUrl || logo;
+  document.getElementById('previewLogo').src = logo;
   if (logo !== DEFAULT_LOGO) {
     document.getElementById('logoUploadText').style.display = 'none';
   }
 }
 
 function saveSettings() {
-  const logo    = document.getElementById('logoPreview').src;
-  const logoUrl = document.getElementById('inputLogoUrl').value.trim();
+  const logo = document.getElementById('logoPreview').src;
   const settings = {
     name:      document.getElementById('inputName').value || DEFAULT_NAME,
     primary:   document.getElementById('colourPrimary').value,
     secondary: document.getElementById('colourSecondary').value,
     logo:      logo.startsWith('data:') ? logo : DEFAULT_LOGO,
-    logoUrl:   logoUrl,
   };
   try {
     localStorage.setItem('geoSuiteSettings', JSON.stringify(settings));
   } catch(e) {
+    // Logo might be too large for localStorage — store without logo
     const small = {...settings, logo: DEFAULT_LOGO};
     localStorage.setItem('geoSuiteSettings', JSON.stringify(small));
     alert('Logo may be too large to save — colours and name saved. Try a smaller logo file.');
@@ -619,55 +570,6 @@ function resetAll() {
 function openSettings()  { document.getElementById('settingsOverlay').classList.add('open'); }
 function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
 function closeSettingsIfOutside(e) { if (e.target === document.getElementById('settingsOverlay')) closeSettings(); }
-
-// ── Shareable link (URL-encoded branding + is.gd shortening) ─────────────
-async function copyShareableLink() {
-  const logoUrl = document.getElementById('inputLogoUrl').value.trim();
-  const logo    = document.getElementById('logoPreview').src;
-
-  const settings = {
-    name:      document.getElementById('inputName').value || DEFAULT_NAME,
-    primary:   document.getElementById('colourPrimary').value,
-    secondary: document.getElementById('colourSecondary').value,
-  };
-  if (logoUrl) {
-    settings.logoUrl = logoUrl;
-  } else if (logo.startsWith('data:') && logo !== DEFAULT_LOGO) {
-    const go = confirm(
-      'Your uploaded logo is too large to include in a shareable link.\n\n' +
-      'To include your logo, paste a URL to your hosted logo (e.g. from your website) ' +
-      'into the "Logo URL" field.\n\nCopy link anyway without the logo?'
-    );
-    if (!go) return;
-  }
-
-  const base    = window.location.origin + window.location.pathname;
-  const longUrl = base + '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(settings))));
-
-  const btn = document.getElementById('shareBtn');
-  btn.textContent = '⏳ Shortening…';
-  btn.disabled = true;
-
-  try {
-    const resp = await fetch('https://is.gd/create.php?format=json&url=' + encodeURIComponent(longUrl));
-    const data = await resp.json();
-    if (!data.shorturl) throw new Error('no shorturl');
-    await navigator.clipboard.writeText(data.shorturl);
-    btn.textContent = '✓ Link copied!';
-    setTimeout(() => { btn.textContent = '🔗 Copy shareable link'; btn.disabled = false; }, 3000);
-  } catch(e) {
-    // Fallback: copy the long URL or show a prompt
-    try {
-      await navigator.clipboard.writeText(longUrl);
-      btn.textContent = '✓ Link copied (full URL)';
-    } catch(e2) {
-      prompt('Copy this branded link:', longUrl);
-      btn.textContent = '🔗 Copy shareable link';
-      btn.disabled = false;
-    }
-    setTimeout(() => { btn.textContent = '🔗 Copy shareable link'; btn.disabled = false; }, 3000);
-  }
-}
 
 // Colour helpers
 function darken(hex, pct) {
@@ -709,13 +611,9 @@ function loadTool(filename, event) {
   if (event) event.preventDefault();
 
   // When running locally (file://) iframes are blocked by browser security
-  // Fall back to opening in a new tab with brand in URL
+  // Fall back to opening in a new tab
   if (window.location.protocol === 'file:') {
-    const s = loadSettings();
-    const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
-    if (s.logoUrl) brand.logoUrl = s.logoUrl;
-    const param = '?brand=' + btoa(unescape(encodeURIComponent(JSON.stringify(brand))));
-    window.open(filename + param, '_blank');
+    window.open(filename, '_blank');
     return;
   }
 
@@ -725,14 +623,9 @@ function loadTool(filename, event) {
   const title   = document.getElementById('toolTitle');
   const logo    = document.getElementById('overlayLogo');
 
-  title.textContent = filename === 'overlap-map.html'
-    ? 'Customer & Location Mapper'
-    : filename === 'customer-map.html'
-    ? 'Customer Location Mapper'
-    : filename === 'local-coverage.html'
-    ? 'Local Coverage Map'
-    : filename === 'brand-map.html'
-    ? 'Brand Opportunity Mapper'
+  title.textContent = filename === 'overlap-map.html' ? 'Customer & Location Mapper'
+    : filename === 'hnw-finder.html' ? 'HNW Area Finder'
+    : filename === 'customer-map.html' ? 'Customer Location Map'
     : 'Profile & Lookalike Finder';
 
   logo.src = document.getElementById('headerLogo').src;
@@ -742,21 +635,11 @@ function loadTool(filename, event) {
   frame.style.display    = 'none';
   document.body.style.overflow = 'hidden';
 
-  // Pass brand via window.name BEFORE setting src — available instantly in the tool
-  // regardless of how long scripts take to load (no timing dependency)
-  const s = loadSettings();
-  const brand = { name: s.name, primary: s.primary, secondary: s.secondary };
-  if (s.logoUrl) brand.logoUrl = s.logoUrl;
-  if (s.logo && s.logo.startsWith('data:') && s.logo !== DEFAULT_LOGO) brand.logo = s.logo;
-  try { frame.contentWindow.name = JSON.stringify(brand); } catch(e) {}
-
   frame.onload = () => {
     loading.style.display = 'none';
     frame.style.display   = 'flex';
-    // Belt-and-suspenders: also send via postMessage after load
-    frame.contentWindow.postMessage({ type: 'geoSuiteBrand', settings: s }, '*');
   };
-  frame.src = filename;  // clean URL, no params
+  frame.src = filename;
 }
 
 function closeTool() {
