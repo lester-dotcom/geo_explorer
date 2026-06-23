@@ -158,6 +158,10 @@
         <button id="btnHNW" class="active" onclick="setMapMode('hnw')">HNW districts</button>
         <button id="btnOverlay" onclick="setMapMode('overlay')" style="display:none">Customer overlay</button>
       </div>
+      <div class="seg" id="customerFilters" style="display:none">
+        <button id="btnShowInHNW" class="active" onclick="toggleCustomerFilter('in')">✦ In HNW</button>
+        <button id="btnShowOutHNW" class="active" onclick="toggleCustomerFilter('out')">Outside HNW</button>
+      </div>
       <div class="hnw-legend">
         <span>Lower</span>
         <div class="hnw-gradient"></div>
@@ -189,6 +193,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 let hnwLayer = null, customerLayer = null, customerData = [], overlayResults = [];
 let currentThreshold = 20;
 let mapMode = 'hnw';
+let showInHNW = true, showOutHNW = true;
 
 // ── HNW colour scale ──────────────────────────────────────────────────────
 function hnwColour(band) {
@@ -256,6 +261,33 @@ function setMapMode(mode) {
     if (mode === 'overlay' && !map.hasLayer(customerLayer)) customerLayer.addTo(map);
     if (mode === 'hnw' && map.hasLayer(customerLayer)) map.removeLayer(customerLayer);
   }
+  document.getElementById('customerFilters').style.display = (mode === 'overlay' && overlayResults.length) ? '' : 'none';
+}
+
+function toggleCustomerFilter(which) {
+  if (which === 'in') showInHNW = !showInHNW;
+  if (which === 'out') showOutHNW = !showOutHNW;
+  document.getElementById('btnShowInHNW').classList.toggle('active', showInHNW);
+  document.getElementById('btnShowOutHNW').classList.toggle('active', showOutHNW);
+  redrawCustomerLayer();
+}
+
+function redrawCustomerLayer() {
+  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  if (!overlayResults.length) return;
+  const minBand = Math.ceil(10 * (1 - currentThreshold / 100));
+  const lg = L.layerGroup();
+  for (const r of overlayResults) {
+    const inHNW = r.hnwBand && r.hnwBand >= minBand;
+    if (inHNW && !showInHNW) continue;
+    if (!inHNW && !showOutHNW) continue;
+    L.circleMarker([r.lat, r.lng], {
+      radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
+      fillOpacity: 0.4, weight: 1.5
+    }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
+  }
+  customerLayer = lg;
+  customerLayer.addTo(map);
 }
 
 // ── Customer overlay ──────────────────────────────────────────────────────
@@ -335,18 +367,7 @@ async function overlayCustomers() {
       hnwBand: hnwEntry ? hnwEntry.hnw : null };
   }).filter(Boolean);
 
-  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
-  const lg = L.layerGroup();
-  for (const r of overlayResults) {
-    const inHNW = r.hnwBand && r.hnwBand >= Math.ceil(10 * (1 - currentThreshold / 100));
-    L.circleMarker([r.lat, r.lng], {
-      radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
-      fillOpacity: 0.55, weight: 1.5
-    }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
-  }
-  customerLayer = lg;
-  // Customers added last so they render on top of HNW background dots
-  customerLayer.addTo(map);
+  redrawCustomerLayer();
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('btnOverlay').style.display = '';
   document.getElementById('clearOverlayBtn').style.display = '';
