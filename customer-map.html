@@ -198,6 +198,7 @@ textarea::placeholder { color: var(--muted); }
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
 /*
  (c) 2014, Vladimir Agafonkin
@@ -735,25 +736,32 @@ function generateCustomerBrief() {
 function exportCSV() {
   if (!resultData.length) { alert('Run analysis first.'); return; }
 
-  // Group by district, aggregate sectors within each
+  // Sheet 1: by district
   const dd = {};
   for (const r of resultData) {
-    if (!dd[r.district]) dd[r.district] = { count: 0, region: r.region, adminDistrict: r.adminDistrict, sectors: {} };
+    if (!dd[r.district]) dd[r.district] = { count: 0, region: r.region, adminDistrict: r.adminDistrict };
     dd[r.district].count++;
-    dd[r.district].sectors[r.sector] = (dd[r.district].sectors[r.sector] || 0) + 1;
   }
-
-  const rows = [['district', 'customer_count', 'sectors', 'region', 'admin_district']];
+  const districtRows = [['District', 'Customer Count', 'Region', 'Admin District']];
   Object.entries(dd)
     .sort((a, b) => b[1].count - a[1].count)
-    .forEach(([district, info]) => {
-      const sectorList = Object.entries(info.sectors).sort((a,b) => b[1]-a[1]).map(([s,n]) => `${s}(${n})`).join(' ');
-      rows.push([district, info.count, sectorList, info.region, info.adminDistrict]);
-    });
+    .forEach(([district, info]) => districtRows.push([district, info.count, info.region, info.adminDistrict]));
 
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n'));
-  a.download = 'customer_districts.csv'; a.click();
+  // Sheet 2: by sector
+  const sd = {};
+  for (const r of resultData) {
+    if (!sd[r.sector]) sd[r.sector] = { count: 0, district: r.district, region: r.region };
+    sd[r.sector].count++;
+  }
+  const sectorRows = [['Sector', 'Customer Count', 'District', 'Region']];
+  Object.entries(sd)
+    .sort((a, b) => b[1].count - a[1].count)
+    .forEach(([sector, info]) => sectorRows.push([sector, info.count, info.district, info.region]));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(districtRows), 'Districts');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sectorRows), 'Sectors');
+  XLSX.writeFile(wb, 'customer_locations.xlsx');
 }
 
 function loadSample() {
