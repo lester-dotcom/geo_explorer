@@ -252,6 +252,11 @@ function setMapMode(mode) {
   document.getElementById('btnOverlay').classList.toggle('active', mode === 'overlay');
   // Always show HNW layer; customer layer only when in overlay mode
   if (hnwLayer && !map.hasLayer(hnwLayer)) hnwLayer.addTo(map);
+  // In overlay mode, fade HNW dots so customer dots are visible on top
+  if (hnwLayer) {
+    const hnwOpacity = mode === 'overlay' ? 0.35 : 0.8;
+    hnwLayer.eachLayer(l => l.setStyle({ fillOpacity: hnwOpacity }));
+  }
   if (customerLayer) {
     if (mode === 'overlay' && !map.hasLayer(customerLayer)) customerLayer.addTo(map);
     if (mode === 'hnw' && map.hasLayer(customerLayer)) map.removeLayer(customerLayer);
@@ -340,12 +345,12 @@ async function overlayCustomers() {
   for (const r of overlayResults) {
     const inHNW = r.hnwBand && r.hnwBand >= Math.ceil(10 * (1 - currentThreshold / 100));
     L.circleMarker([r.lat, r.lng], {
-      radius: 4, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
+      radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: '#fff',
       fillOpacity: 1, weight: 1.5
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
-  // Customer layer added after HNW so customer dots appear on top
+  // Customers added last so they render on top of HNW background dots
   customerLayer.addTo(map);
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('btnOverlay').style.display = '';
