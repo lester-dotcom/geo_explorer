@@ -175,6 +175,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="profile-tool/valid_districts.js"></script>
+<script src="valid_sectors.js"></script>
 <script src="hnw_data.js"></script>
 <script>
 
@@ -432,10 +433,14 @@ function exportXLSX() {
   filtered.forEach(([district, d]) => distRows.push([district, d.hnw, d.lat, d.lng]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(distRows), 'Districts');
 
-  // Sheet 2: Sectors (expand each district to 10 sectors 0-9)
+  // Sheet 2: Sectors (only real validated sectors)
   const secRows = [['Sector', 'HNW Band (1-10)', 'District']];
   filtered.forEach(([district, d]) => {
-    for (let i = 0; i <= 9; i++) secRows.push([`${district} ${i}`, d.hnw, district]);
+    for (let i = 0; i <= 9; i++) {
+      const sector = `${district} ${i}`;
+      if (typeof VALID_SECTORS !== 'undefined' && !VALID_SECTORS.has(sector)) continue;
+      secRows.push([sector, d.hnw, district]);
+    }
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
 
