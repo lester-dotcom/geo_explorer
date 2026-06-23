@@ -161,6 +161,7 @@
       <div class="seg" id="customerFilters" style="display:none">
         <button id="btnShowInHNW" class="active" onclick="toggleCustomerFilter('in')">✦ In HNW</button>
         <button id="btnShowOutHNW" class="active" onclick="toggleCustomerFilter('out')">Outside HNW</button>
+        <button id="btnShowGaps" onclick="toggleCustomerFilter('gaps')" title="HNW areas with no customers">HNW gaps</button>
       </div>
       <div class="hnw-legend">
         <span>Lower</span>
@@ -190,10 +191,10 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '© OpenStreetMap © CartoCDN', maxZoom: 19
 }).addTo(map);
 
-let hnwLayer = null, customerLayer = null, customerData = [], overlayResults = [];
+let hnwLayer = null, customerLayer = null, gapLayer = null, customerData = [], overlayResults = [];
 let currentThreshold = 20;
 let mapMode = 'hnw';
-let showInHNW = true, showOutHNW = true;
+let showInHNW = true, showOutHNW = true, showGaps = false;
 
 // ── HNW colour scale ──────────────────────────────────────────────────────
 function hnwColour(band) {
@@ -267,9 +268,29 @@ function setMapMode(mode) {
 function toggleCustomerFilter(which) {
   if (which === 'in') showInHNW = !showInHNW;
   if (which === 'out') showOutHNW = !showOutHNW;
+  if (which === 'gaps') showGaps = !showGaps;
   document.getElementById('btnShowInHNW').classList.toggle('active', showInHNW);
   document.getElementById('btnShowOutHNW').classList.toggle('active', showOutHNW);
+  document.getElementById('btnShowGaps').classList.toggle('active', showGaps);
   redrawCustomerLayer();
+  redrawGapLayer();
+}
+
+function redrawGapLayer() {
+  if (gapLayer) { map.removeLayer(gapLayer); gapLayer = null; }
+  if (!showGaps || !overlayResults.length) return;
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const customerDistricts = new Set(overlayResults.map(r => r.district));
+  const lg = L.layerGroup();
+  for (const [district, d] of getFilteredDistricts()) {
+    if (customerDistricts.has(district)) continue;
+    L.circleMarker([d.lat, d.lng], {
+      radius: 6, fillColor: '#fff', color: '#8B6914',
+      fillOpacity: 0.7, weight: 2
+    }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10<br><em>No customers in this area</em>`).addTo(lg);
+  }
+  gapLayer = lg;
+  gapLayer.addTo(map);
 }
 
 function redrawCustomerLayer() {
@@ -437,6 +458,9 @@ function updateOverlayBadge() {
 
 function clearOverlay() {
   if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  if (gapLayer) { map.removeLayer(gapLayer); gapLayer = null; }
+  showGaps = false;
+  document.getElementById('btnShowGaps').classList.remove('active');
   overlayResults = [];
   document.getElementById('pasteArea').value = '';
   document.getElementById('fileInput').value = '';
@@ -485,6 +509,8 @@ function generateHNWBrief() {
 
   // Customer breakdown
   const hasCustomers = overlayResults.length > 0;
+  const customerDistricts = new Set(overlayResults.map(r => r.district));
+  const gapDistricts = hasCustomers ? allHNW.filter(([d]) => !customerDistricts.has(d)) : [];
   const totalCustomers = overlayResults.length;
   const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
   const bandCounts = {};
@@ -502,6 +528,7 @@ function generateHNWBrief() {
     insights.push(`Of <strong>${totalCustomers.toLocaleString()}</strong> customers analysed, <strong>${inHNW.toLocaleString()}</strong> (${pct}%) are located in HNW districts at the current threshold.`);
     const topBand = Object.entries(bandCounts).filter(([b]) => b > 0).sort((a,b) => b[1]-a[1])[0];
     if (topBand) insights.push(`The most common HNW band among customers is <strong>band ${topBand[0]}</strong> with ${topBand[1]} customers.`);
+    if (gapDistricts.length) insights.push(`<strong>${gapDistricts.length}</strong> HNW districts have no customers yet — these represent untapped high-value opportunities.`);
   }
 
   const briefHTML = `<!DOCTYPE html>
@@ -633,6 +660,14 @@ function generateHNWBrief() {
   </div>`;
   })() : ''}
 
+  ${hasCustomers && gapDistricts.length ? `
+  <div style="margin-top:20px">
+    <div class="section-title">HNW opportunity gaps — districts with no customers yet (top ${Math.min(gapDistricts.length, 20)} of ${gapDistricts.length})</div>
+    <div class="dist-grid">
+      ${gapDistricts.slice(0,20).map(([d,v]) => `<div class="dist-item"><div class="code">${d}</div><div class="cnt"><span class="hnw-badge">Band ${v.hnw}</span></div></div>`).join('')}
+    </div>
+  </div>` : ''}
+
   <div class="brief-footer">
     <span>${agencyName} · Geo Intelligence Suite · HNW scores based on ONS Income Deprivation 2019</span>
     <span>Generated ${today} · Confidential</span>
@@ -674,7 +709,16 @@ function exportXLSX() {
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
 
-  // Sheet 3: Customer postcodes (if overlaid)
+  // Sheet 3: HNW gaps — HNW districts with no customers (if overlay loaded)
+  if (overlayResults.length) {
+    const customerDistricts = new Set(overlayResults.map(r => r.district));
+    const gapRows = [['District', 'HNW Band (1-10)', 'Lat', 'Lng']];
+    filtered.filter(([d]) => !customerDistricts.has(d))
+      .forEach(([district, d]) => gapRows.push([district, d.hnw, d.lat, d.lng]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(gapRows), 'HNW Gaps');
+  }
+
+  // Sheet 4: Customer postcodes (if overlaid)
   if (overlayResults.length) {
     const pcRows = [['Postcode', 'District', 'HNW Band (1-10)', 'In HNW Area', 'Lat', 'Lng']];
     overlayResults.forEach(r => {
