@@ -186,9 +186,12 @@ function hnwColour(band) {
 
 // ── Core: draw HNW districts ──────────────────────────────────────────────
 function getFilteredDistricts() {
-  // threshold = top X% means hnw band >= cutoff
   const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
-  return Object.entries(HNW_DATA).filter(([, d]) => d.hnw >= cutoff && d.lat && d.lng);
+  // Filter out bad coordinates (sea / offshore) — keep only mainland England/Wales/Scotland bounds
+  return Object.entries(HNW_DATA).filter(([, d]) =>
+    d.hnw >= cutoff && d.lat && d.lng &&
+    d.lat > 49.8 && d.lat < 61 && d.lng > -8 && d.lng < 2
+  );
 }
 
 function drawHNWLayer() {
@@ -223,12 +226,12 @@ function setMapMode(mode) {
   mapMode = mode;
   document.getElementById('btnHNW').classList.toggle('active', mode === 'hnw');
   document.getElementById('btnOverlay').classList.toggle('active', mode === 'overlay');
-  if (hnwLayer) hnwLayer[mode === 'hnw' ? 'addTo' : 'remove'](map);
-  if (hnwLayer && mode === 'hnw') hnwLayer.addTo(map); else if (hnwLayer) map.removeLayer(hnwLayer);
-  if (customerLayer) customerLayer[mode === 'overlay' ? 'addTo' : 'remove'](map);
-  if (customerLayer && mode === 'overlay') customerLayer.addTo(map); else if (customerLayer) map.removeLayer(customerLayer);
-  // Always show HNW layer faintly as context if in overlay mode
-  if (mode === 'overlay' && hnwLayer) hnwLayer.addTo(map);
+  // Always show HNW layer; customer layer only when in overlay mode
+  if (hnwLayer && !map.hasLayer(hnwLayer)) hnwLayer.addTo(map);
+  if (customerLayer) {
+    if (mode === 'overlay' && !map.hasLayer(customerLayer)) customerLayer.addTo(map);
+    if (mode === 'hnw' && map.hasLayer(customerLayer)) map.removeLayer(customerLayer);
+  }
 }
 
 // ── Customer overlay ──────────────────────────────────────────────────────
@@ -313,19 +316,16 @@ async function overlayCustomers() {
   for (const r of overlayResults) {
     const inHNW = r.hnwBand && r.hnwBand >= Math.ceil(10 * (1 - currentThreshold / 100));
     L.circleMarker([r.lat, r.lng], {
-      radius: 4, fillColor: inHNW ? '#aec90b' : '#4c565c', color: '#fff',
-      fillOpacity: 0.85, weight: 1
+      radius: 5, fillColor: inHNW ? '#aec90b' : '#e53e3e', color: '#fff',
+      fillOpacity: 0.95, weight: 2
     }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
   }
   customerLayer = lg;
+  customerLayer.addTo(map);
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('btnOverlay').style.display = '';
   document.getElementById('clearOverlayBtn').style.display = '';
   document.getElementById('overlayBtn').disabled = false;
-
-  // Show both layers
-  hnwLayer.addTo(map);
-  customerLayer.addTo(map);
   setMapMode('overlay');
   updateOverlayBadge();
   document.getElementById('exportBtn').disabled = false;
