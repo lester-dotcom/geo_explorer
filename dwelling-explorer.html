@@ -128,7 +128,13 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="dwelling_data.js"></script>
 <script>
-const DATA = typeof DWELLING_DATA !== 'undefined' ? DWELLING_DATA : {};
+const RAW = typeof DWELLING_DATA !== 'undefined' ? DWELLING_DATA : {};
+// Compute garden score: detached×1.0 + semi×0.5 + terraced×0.1 (flats contribute 0)
+// Hierarchy: detached > semi > terraced > flat
+const DATA = Object.fromEntries(Object.entries(RAW).map(([k,d]) => [k, {
+  ...d,
+  garden: Math.min(10, Math.max(1, Math.round((d.detached * 1.0 + d.semi * 0.5 + d.terraced * 0.1) / 8)))
+}]));
 
 const MODE_COLOURS = {
   detached: '#2d5be3',
