@@ -176,12 +176,12 @@ function buildLayer(mode) {
     const intensity = maxVal > 0 ? val / maxVal : 0;
     const opacity = 0.15 + intensity * 0.75;
     const marker = L.circleMarker([d.lat, d.lng], {
-      radius: 7,
+      radius: 9,
       color: colour,
       weight: 1,
       fillColor: colour,
       fillOpacity: opacity,
-      opacity: 0.6
+      opacity: 0.7
     });
     marker.on('click', function() {
       showStats(district, d);
@@ -251,7 +251,7 @@ function doSearch() {
   const msg = document.getElementById('search-msg');
   if (!raw) { msg.textContent = 'Enter a postcode district.'; return; }
   const entry = markerMap[raw];
-  if (!entry) { msg.textContent = `"${raw}" not found in dataset.`; msg.style.color = '#e24b4a'; return; }
+  if (!entry) { msg.textContent = `"${raw}" not found. Try: CM13, TN1, SW4, M20, EH3, G12`; msg.style.color = '#e24b4a'; return; }
   msg.textContent = '';
   msg.style.color = '';
   map.flyTo([entry.d.lat, entry.d.lng], 11, { duration: 1 });
