@@ -55,6 +55,9 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 .garden-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 4px 10px; background: #e8f7f0; border: 1px solid var(--c-garden); border-radius: 20px; font-size: 12px; font-weight: 600; color: var(--c-garden); }
 .empty-state { color: var(--muted); font-size: 12px; line-height: 1.6; }
 #map { flex: 1; }
+.filter-row { margin-bottom: 10px; }
+.filter-row label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; font-weight: 500; }
+.filter-row input[type=range] { width: 100%; accent-color: var(--primary); cursor: pointer; }
 </style>
 </head>
 <body>
@@ -98,6 +101,28 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
           <span class="swatch" style="background:var(--c-garden)"></span> Garden Score
         </button>
       </div>
+    </div>
+
+    <div>
+      <div class="section-label">Filter Districts</div>
+      <div class="filter-row">
+        <label>Min garden score <span id="lbl-garden">1</span>+</label>
+        <input type="range" id="filter-garden" min="1" max="10" value="1" oninput="applyFilters()">
+      </div>
+      <div class="filter-row">
+        <label>Min detached % <span id="lbl-detached">0</span>%+</label>
+        <input type="range" id="filter-detached" min="0" max="80" step="5" value="0" oninput="applyFilters()">
+      </div>
+      <div class="filter-row">
+        <label>Min semi % <span id="lbl-semi">0</span>%+</label>
+        <input type="range" id="filter-semi" min="0" max="60" step="5" value="0" oninput="applyFilters()">
+      </div>
+      <div class="filter-row">
+        <label>Max flat % <span id="lbl-flat">100</span>%</label>
+        <input type="range" id="filter-flat" min="0" max="100" step="5" value="100" oninput="applyFilters()">
+      </div>
+      <button onclick="resetFilters()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 0;text-decoration:underline">Reset filters</button>
+      <div id="filter-count" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
     </div>
 
     <div>
@@ -154,6 +179,7 @@ const MODE_LABELS = {
 let currentMode = 'detached';
 let markerLayer = null;
 let markerMap = {};
+let currentOpacities = {};
 
 const map = L.map('map', { zoomControl: true }).setView([52.8, -1.5], 6);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -189,9 +215,11 @@ function buildLayer(mode) {
     });
     marker.bindTooltip(district, { permanent: false, direction: 'top', className: '' });
     markerLayer.addLayer(marker);
+    currentOpacities[district.toUpperCase()] = opacity;
     markerMap[district.toUpperCase()] = { marker, d };
   });
   updateLegend(mode, maxVal);
+  applyFilters();
 }
 
 function updateLegend(mode, maxVal) {
@@ -262,6 +290,34 @@ function doSearch() {
 document.getElementById('search-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') doSearch();
 });
+
+function applyFilters() {
+  const minGarden = parseInt(document.getElementById('filter-garden').value);
+  const minDet    = parseInt(document.getElementById('filter-detached').value);
+  const minSemi   = parseInt(document.getElementById('filter-semi').value);
+  const maxFlat   = parseInt(document.getElementById('filter-flat').value);
+
+  document.getElementById('lbl-garden').textContent   = minGarden;
+  document.getElementById('lbl-detached').textContent = minDet;
+  document.getElementById('lbl-semi').textContent     = minSemi;
+  document.getElementById('lbl-flat').textContent     = maxFlat;
+
+  let shown = 0;
+  Object.entries(markerMap).forEach(([district, { marker, d }]) => {
+    const pass = d.garden >= minGarden && d.detached >= minDet && d.semi >= minSemi && d.flat <= maxFlat;
+    if (pass) { marker.setStyle({ opacity: 0.7, fillOpacity: currentOpacities[district] }); shown++; }
+    else       { marker.setStyle({ opacity: 0, fillOpacity: 0 }); }
+  });
+  document.getElementById('filter-count').textContent = shown + ' districts shown';
+}
+
+function resetFilters() {
+  document.getElementById('filter-garden').value   = 1;
+  document.getElementById('filter-detached').value = 0;
+  document.getElementById('filter-semi').value     = 0;
+  document.getElementById('filter-flat').value     = 100;
+  applyFilters();
+}
 
 buildLayer(currentMode);
 </script>
