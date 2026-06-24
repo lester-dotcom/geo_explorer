@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dwelling Type Explorer — Pratt Digital</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #2d5be3; --primary-dark: #1e4bc7; --primary-light: #eef1fc;
+  --bg: #f5f4f0; --surface: #fff; --surface2: #f0efe9; --border: #e2e0d8;
+  --text: #1a1a18; --muted: #6b6960;
+  --c-detached: #2d5be3; --c-semi: #06b6d4; --c-terraced: #f59e0b;
+  --c-flat: #e24b4a; --c-garden: #18a058;
+  --radius: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "DM Sans", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+header { background: #fff; border-bottom: 3px solid var(--primary); padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+.header-divider { width: 1px; height: 28px; background: var(--border); }
+header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
+.header-badge { margin-left: auto; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; letter-spacing: .04em; text-transform: uppercase; }
+.layout { display: grid; grid-template-columns: 340px 1fr; flex: 1; height: calc(100vh - 53px); overflow: hidden; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 6px; }
+.card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.card-header { padding: 8px 12px; font-size: 12px; font-weight: 600; background: var(--surface2); border-bottom: 1px solid var(--border); }
+.card-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.input-row { display: flex; gap: 6px; }
+.inp { flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; font-family: "DM Sans", sans-serif; font-size: 12px; background: var(--surface2); color: var(--text); outline: none; text-transform: uppercase; }
+.inp:focus { border-color: var(--primary); }
+.inp::placeholder { text-transform: none; }
+.btn { padding: 7px 14px; background: var(--primary); color: #fff; border: none; border-radius: 7px; font-family: "DM Sans", sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; }
+.btn:hover { background: var(--primary-dark); }
+.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mode-btn { padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface2); font-family: "DM Sans", sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--muted); text-align: left; transition: all .12s; display: flex; align-items: center; gap: 7px; }
+.mode-btn .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.mode-btn.active { font-weight: 600; }
+.mode-btn[data-mode=detached].active  { border-color: var(--c-detached); background: #eef1fc; color: var(--c-detached); }
+.mode-btn[data-mode=semi].active      { border-color: var(--c-semi);      background: #e0f7fa; color: var(--c-semi); }
+.mode-btn[data-mode=terraced].active  { border-color: var(--c-terraced);  background: #fff7ed; color: var(--c-terraced); }
+.mode-btn[data-mode=flat].active      { border-color: var(--c-flat);      background: #fdf0f0; color: var(--c-flat); }
+.mode-btn[data-mode=garden].active    { border-color: var(--c-garden);    background: #e8f7f0; color: var(--c-garden); }
+.legend-bar { height: 10px; border-radius: 6px; width: 100%; margin-bottom: 4px; }
+.legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+.stats-panel { background: var(--surface2); border-radius: var(--radius); padding: 12px; border: 1px solid var(--border); }
+.stats-district { font-size: 18px; font-weight: 700; color: var(--primary); font-family: "DM Mono", monospace; margin-bottom: 8px; }
+.stats-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px; }
+.stats-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.stats-row .lbl { flex: 1; color: var(--muted); }
+.stats-row .val { font-weight: 600; font-family: "DM Mono", monospace; font-size: 11px; }
+.stats-bar-bg { flex: 1.5; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.stats-bar-fill { height: 100%; border-radius: 2px; }
+.garden-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 4px 10px; background: #e8f7f0; border: 1px solid var(--c-garden); border-radius: 20px; font-size: 12px; font-weight: 600; color: var(--c-garden); }
+.empty-state { color: var(--muted); font-size: 12px; line-height: 1.6; }
+#map { flex: 1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-divider"></div>
+  <h1>Dwelling Type Explorer</h1>
+  <div class="header-badge">UK Housing</div>
+</header>
+<div class="layout">
+  <div class="sidebar">
+
+    <div>
+      <div class="section-label">Search District</div>
+      <div class="card">
+        <div class="card-body">
+          <div class="input-row">
+            <input class="inp" id="search-input" type="text" placeholder="e.g. TN1, SW4, EH1…" maxlength="6">
+            <button class="btn" onclick="doSearch()">Show</button>
+          </div>
+          <div id="search-msg" style="font-size:11px;color:var(--muted);min-height:14px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Display Mode</div>
+      <div class="mode-grid">
+        <button class="mode-btn active" data-mode="detached" onclick="setMode('detached')">
+          <span class="swatch" style="background:var(--c-detached)"></span> Detached
+        </button>
+        <button class="mode-btn" data-mode="semi" onclick="setMode('semi')">
+          <span class="swatch" style="background:var(--c-semi)"></span> Semi-detached
+        </button>
+        <button class="mode-btn" data-mode="terraced" onclick="setMode('terraced')">
+          <span class="swatch" style="background:var(--c-terraced)"></span> Terraced
+        </button>
+        <button class="mode-btn" data-mode="flat" onclick="setMode('flat')">
+          <span class="swatch" style="background:var(--c-flat)"></span> Flats
+        </button>
+        <button class="mode-btn" data-mode="garden" onclick="setMode('garden')" style="grid-column:span 2">
+          <span class="swatch" style="background:var(--c-garden)"></span> Garden Score
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Legend</div>
+      <div class="card">
+        <div class="card-body">
+          <div id="legend-bar" class="legend-bar"></div>
+          <div class="legend-labels">
+            <span id="legend-lo">0%</span>
+            <span id="legend-mid"></span>
+            <span id="legend-hi">100%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">District Detail</div>
+      <div id="stats-panel" class="stats-panel">
+        <div class="empty-state">Click a district on the map or search above to see its housing breakdown.</div>
+      </div>
+    </div>
+
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="dwelling_data.js"></script>
+<script>
+const DATA = typeof DWELLING_DATA !== 'undefined' ? DWELLING_DATA : {};
+
+const MODE_COLOURS = {
+  detached: '#2d5be3',
+  semi:     '#06b6d4',
+  terraced: '#f59e0b',
+  flat:     '#e24b4a',
+  garden:   '#18a058'
+};
+const MODE_LABELS = {
+  detached: 'Detached %',
+  semi:     'Semi-detached %',
+  terraced: 'Terraced %',
+  flat:     'Flats %',
+  garden:   'Garden Score (1–10)'
+};
+
+let currentMode = 'detached';
+let markerLayer = null;
+let markerMap = {};
+
+const map = L.map('map', { zoomControl: true }).setView([52.8, -1.5], 6);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  maxZoom: 18
+}).addTo(map);
+
+function getMax(mode) {
+  return Math.max(...Object.values(DATA).map(d => d[mode]));
+}
+
+function buildLayer(mode) {
+  if (markerLayer) { markerLayer.clearLayers(); }
+  markerLayer = L.layerGroup().addTo(map);
+  markerMap = {};
+  const maxVal = getMax(mode);
+  const colour = MODE_COLOURS[mode];
+  Object.entries(DATA).forEach(([district, d]) => {
+    const val = d[mode];
+    const intensity = maxVal > 0 ? val / maxVal : 0;
+    const opacity = 0.15 + intensity * 0.75;
+    const marker = L.circleMarker([d.lat, d.lng], {
+      radius: 7,
+      color: colour,
+      weight: 1,
+      fillColor: colour,
+      fillOpacity: opacity,
+      opacity: 0.6
+    });
+    marker.on('click', function() {
+      showStats(district, d);
+      showPopup(marker, district, d);
+    });
+    marker.bindTooltip(district, { permanent: false, direction: 'top', className: '' });
+    markerLayer.addLayer(marker);
+    markerMap[district.toUpperCase()] = { marker, d };
+  });
+  updateLegend(mode, maxVal);
+}
+
+function updateLegend(mode, maxVal) {
+  const colour = MODE_COLOURS[mode];
+  const bar = document.getElementById('legend-bar');
+  bar.style.background = `linear-gradient(to right, ${colour}26, ${colour})`;
+  const isGarden = mode === 'garden';
+  document.getElementById('legend-lo').textContent = isGarden ? '1' : '0%';
+  document.getElementById('legend-mid').textContent = isGarden ? '5' : Math.round(maxVal / 2) + '%';
+  document.getElementById('legend-hi').textContent = isGarden ? '10' : maxVal + '%';
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  buildLayer(mode);
+}
+
+function showPopup(marker, district, d) {
+  const html = `
+    <div style="font-family:'DM Sans',sans-serif;font-size:12px;min-width:150px;">
+      <div style="font-family:'DM Mono',monospace;font-weight:700;font-size:14px;margin-bottom:6px;color:#2d5be3;">${district}</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#6b6960;">Detached</span><strong>${d.detached}%</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#6b6960;">Semi</span><strong>${d.semi}%</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#6b6960;">Terraced</span><strong>${d.terraced}%</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6b6960;">Flat</span><strong>${d.flat}%</strong></div>
+      <div style="background:#e8f7f0;border:1px solid #18a058;border-radius:12px;padding:3px 8px;display:inline-block;color:#18a058;font-weight:600;font-size:11px;">Garden score: ${d.garden}/10</div>
+    </div>`;
+  marker.bindPopup(html).openPopup();
+}
+
+function showStats(district, d) {
+  const panel = document.getElementById('stats-panel');
+  const rows = [
+    { key: 'detached', label: 'Detached',      colour: '#2d5be3', val: d.detached, suffix: '%' },
+    { key: 'semi',     label: 'Semi-detached', colour: '#06b6d4', val: d.semi,     suffix: '%' },
+    { key: 'terraced', label: 'Terraced',      colour: '#f59e0b', val: d.terraced, suffix: '%' },
+    { key: 'flat',     label: 'Flats',         colour: '#e24b4a', val: d.flat,     suffix: '%' },
+  ];
+  const rowsHtml = rows.map(r => `
+    <div class="stats-row">
+      <span class="dot" style="background:${r.colour}"></span>
+      <span class="lbl">${r.label}</span>
+      <div class="stats-bar-bg"><div class="stats-bar-fill" style="width:${r.val}%;background:${r.colour}"></div></div>
+      <span class="val">${r.val}${r.suffix}</span>
+    </div>`).join('');
+  panel.innerHTML = `
+    <div class="stats-district">${district}</div>
+    ${rowsHtml}
+    <div class="garden-badge">&#127807; Garden score: ${d.garden} / 10</div>`;
+}
+
+function doSearch() {
+  const raw = document.getElementById('search-input').value.trim().toUpperCase();
+  const msg = document.getElementById('search-msg');
+  if (!raw) { msg.textContent = 'Enter a postcode district.'; return; }
+  const entry = markerMap[raw];
+  if (!entry) { msg.textContent = `"${raw}" not found in dataset.`; msg.style.color = '#e24b4a'; return; }
+  msg.textContent = '';
+  msg.style.color = '';
+  map.flyTo([entry.d.lat, entry.d.lng], 11, { duration: 1 });
+  showStats(raw, entry.d);
+  setTimeout(() => showPopup(entry.marker, raw, entry.d), 900);
+}
+
+document.getElementById('search-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doSearch();
+});
+
+buildLayer(currentMode);
+</script>
+</body>
+</html>
