@@ -654,7 +654,7 @@ function drawHNWLayer() {
     if (minDist > outerMiles) continue;
     const zone = minDist <= primaryMiles ? 'primary' : 'fringe';
     L.circleMarker([d.lat, d.lng], {
-      radius: 6, fillColor: '#d4a017', color: '#fff',
+      radius: 6, fillColor: '#9333ea', color: '#fff',
       fillOpacity: 0.85, weight: 1
     }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10<br><span style="font-size:11px;color:#888">${zone === 'primary' ? '✓ Within primary radius' : '~ Within fringe radius'}</span>`).addTo(lg);
   }
