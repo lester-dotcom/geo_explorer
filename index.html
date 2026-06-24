@@ -401,6 +401,27 @@ footer {
       </div>
     </a>
 
+    <a class="tool-card" id="card-dwelling" href="#" onclick="loadTool('dwelling-explorer.html', event)">
+      <div class="tool-header">
+        <div class="tool-icon" style="background:#f5f0ff">🏠</div>
+        <div class="tool-meta">
+          <span class="tag" style="background:#f5f0ff;color:#7e22ce">Data</span>
+          <h3>Dwelling Type Explorer</h3>
+        </div>
+      </div>
+      <p class="tool-desc">Explore UK housing stock by postcode district — detached, semi-detached, terraced and flats. Includes a garden likelihood score derived from dwelling mix.</p>
+      <div class="tool-features">
+        <div class="tool-feature">Detached / semi / terraced / flats</div>
+        <div class="tool-feature">Garden likelihood score</div>
+        <div class="tool-feature">2,159 districts nationwide</div>
+        <div class="tool-feature">Click any district for full breakdown</div>
+      </div>
+      <div class="tool-cta">
+        <button class="tool-btn" style="background:#7e22ce;color:#fff" onclick="event.stopPropagation(); loadTool('dwelling-explorer.html', event)">Open tool →</button>
+        <span class="tool-note">Regional estimates · Census 2021 pending</span>
+      </div>
+    </a>
+
   </div>
 </main>
 
