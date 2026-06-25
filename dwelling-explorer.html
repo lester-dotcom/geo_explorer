@@ -158,7 +158,7 @@ const RAW = typeof DWELLING_DATA !== 'undefined' ? DWELLING_DATA : {};
 // Hierarchy: detached > semi > terraced > flat
 const DATA = Object.fromEntries(Object.entries(RAW).map(([k,d]) => [k, {
   ...d,
-  garden: Math.min(10, Math.max(1, Math.round((d.detached * 1.0 + d.semi * 0.5 + d.terraced * 0.1) / 8)))
+  garden: Math.min(10, Math.max(1, Math.round((d.detached * 1.0 + d.semi * 0.5 + d.terraced * 0.1) / 6)))
 }]));
 
 const MODE_COLOURS = {
