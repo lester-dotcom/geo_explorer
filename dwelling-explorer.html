@@ -164,6 +164,35 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
       </div>
     </div>
 
+    <div id="customer-stats-wrap" style="display:none">
+      <div class="section-label">Customer Profile</div>
+      <div class="stats-panel">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+          <div style="background:#eef1fc;border-radius:8px;padding:8px 10px;border-left:3px solid #2d5be3">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d5be3;margin-bottom:2px">Avg detached</div>
+            <div id="cust-det" style="font-size:18px;font-weight:700;color:#2d5be3">—</div>
+          </div>
+          <div style="background:#e0f7fa;border-radius:8px;padding:8px 10px;border-left:3px solid #06b6d4">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#06b6d4;margin-bottom:2px">Avg semi</div>
+            <div id="cust-semi" style="font-size:18px;font-weight:700;color:#06b6d4">—</div>
+          </div>
+          <div style="background:#fff7ed;border-radius:8px;padding:8px 10px;border-left:3px solid #f59e0b">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#f59e0b;margin-bottom:2px">Avg terraced</div>
+            <div id="cust-terr" style="font-size:18px;font-weight:700;color:#f59e0b">—</div>
+          </div>
+          <div style="background:#fdf0f0;border-radius:8px;padding:8px 10px;border-left:3px solid #e24b4a">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#e24b4a;margin-bottom:2px">Avg flat</div>
+            <div id="cust-flat" style="font-size:18px;font-weight:700;color:#e24b4a">—</div>
+          </div>
+        </div>
+        <div style="background:#e8f7f0;border-radius:8px;padding:8px 10px;border-left:3px solid #18a058;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#18a058">Avg garden score</div>
+          <div id="cust-garden" style="font-size:20px;font-weight:700;color:#18a058">—</div>
+        </div>
+        <div id="cust-count" style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center"></div>
+      </div>
+    </div>
+
     <div>
       <div class="section-label">District Detail</div>
       <div id="stats-panel" class="stats-panel">
@@ -188,10 +217,19 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 const RAW = typeof DWELLING_DATA !== 'undefined' ? DWELLING_DATA : {};
 // Compute garden score: detached×1.0 + semi×0.5 + terraced×0.1 (flats contribute 0)
 // Hierarchy: detached > semi > terraced > flat
-const DATA = Object.fromEntries(Object.entries(RAW).map(([k,d]) => [k, {
-  ...d,
-  garden: Math.min(10, Math.max(1, Math.round((d.detached * 1.0 + d.semi * 0.5 + d.terraced * 0.1) / 6)))
-}]));
+function validCoords(lat, lng) {
+  if (!lat || !lng) return false;
+  if (lat < 49.9 || lat > 60.9) return false;
+  if (lng < -7.6 || lng > 2.0) return false;
+  if (lat < 51.5 && lng < -5.8) return false; // Atlantic patch west of Cornwall
+  return true;
+}
+const DATA = Object.fromEntries(Object.entries(RAW)
+  .filter(([,d]) => validCoords(d.lat, d.lng))
+  .map(([k,d]) => [k, {
+    ...d,
+    garden: Math.min(10, Math.max(1, Math.round((d.detached * 1.0 + d.semi * 0.5 + d.terraced * 0.1) / 6)))
+  }]));
 
 const MODE_COLOURS = {
   detached: '#2d5be3',
@@ -512,6 +550,7 @@ async function runCustomerAnalysis() {
   const statusEl = document.getElementById('customer-status');
   statusEl.textContent = customerResults.length + ' customers plotted';
   btn.disabled = false;
+  updateCustomerStats();
   btn.textContent = 'Re-analyse';
 }
 
@@ -756,6 +795,20 @@ function generateBrief() {
   const w = window.open('', '_blank');
   w.document.write(briefHTML);
   w.document.close();
+}
+
+function updateCustomerStats() {
+  const known = customerResults.filter(c => c.garden !== null);
+  if (!known.length) return;
+  const avg = key => Math.round(known.reduce((s,c) => s + c[key], 0) / known.length);
+  const avgGarden = (known.reduce((s,c) => s + c.garden, 0) / known.length).toFixed(1);
+  document.getElementById('cust-det').textContent   = avg('detached') + '%';
+  document.getElementById('cust-semi').textContent  = avg('semi') + '%';
+  document.getElementById('cust-terr').textContent  = avg('terraced') + '%';
+  document.getElementById('cust-flat').textContent  = avg('flat') + '%';
+  document.getElementById('cust-garden').textContent = avgGarden + ' / 10';
+  document.getElementById('cust-count').textContent  = known.length + ' customers with dwelling data';
+  document.getElementById('customer-stats-wrap').style.display = '';
 }
 
 buildLayer(currentMode);
