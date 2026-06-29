@@ -491,7 +491,7 @@ async function bulkGeocode(postcodes) {
       if (d.status === 200) {
         for (const item of d.result) {
           const val = item.result
-            ? { lat: item.result.latitude, lng: item.result.longitude, district: item.result.admin_district || 'Unknown', valid: true }
+            ? { lat: item.result.latitude, lng: item.result.longitude, district: item.result.admin_district || 'Unknown', postcode: item.result.postcode, valid: true }
             : { valid: false };
           res[item.query] = val;
           res[item.query.replace(/\s+/g,'').toUpperCase()] = val;
@@ -517,7 +517,8 @@ async function runCustomerAnalysis() {
     const g = geo[pc] || geo[pc.replace(/\s+/g,'').toUpperCase()];
     if (!g || !g.valid) continue;
     // Extract district (area code) from postcode
-    const district = pc.replace(/\s.*/, '').toUpperCase();
+    const normalized = g.postcode || pc;
+    const district = normalized.replace(/\s.*/, '').toUpperCase();
     const dwellingDistrict = DATA[district] || null;
     customerResults.push({
       postcode: pc,
