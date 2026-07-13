@@ -70,26 +70,6 @@
     if (inp) inp.focus();
   });
 })();
-
-// ── Client storage UI ──
-function pdShowRestoredBadge_customers(saved) {
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = `<div id="pd-storage-badge-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;background:rgba(22,163,74,0.07);font-size:12px;">
-  <div style="font-weight:600;color:#16a34a">✓ <span id="pd-badge-count-customers"></span> saved</div>
-  <div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-badge-date-customers"></span> · <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#16a34a">Upload new list</a></div>
-</div>`;
-  var c = document.getElementById('pd-badge-count-customers');
-  var d = document.getElementById('pd-badge-date-customers');
-  if (c) c.textContent = saved.count + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-  checkReady();
-}
-function pdClearAndReload_customers() {
-  pdClear_customers();
-  location.reload();
-}
-
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -379,18 +359,6 @@ textarea:focus{border-color:var(--primary);}
 let map;
 let locations = [];   // {name, postcode, lat, lng, colour}
 let customerData = [];
-
-// ── localStorage restore ──
-(function() {
-  var saved = pdLoad_customers();
-  if (saved) {
-    customerData = saved.data;
-    // defer UI update until DOM ready
-    document.addEventListener('DOMContentLoaded', function() {
-      pdShowRestoredBadge_customers(saved);
-    });
-  }
-})();
 let results = [];     // geocoded customers with zone tags
 let primaryMiles = 20;
 let layers = { dots:null, heat:null, inside:null, fringe:null, outside:null, rings:null, pins:null };
@@ -1084,6 +1052,49 @@ body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13
   <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
   <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
 </div>
+
+<script>
+/* ── PD client persistence: local-coverage ── */
+
+function pdShowRestoredBadge_customers(saved) {
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = '<div id="pd-badge-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
+    + '<div style="font-weight:600;color:#16a34a">\u2713 <span id="pd-bc-customers"></span> saved</div>'
+    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-customers"></span>'
+    + ' &middot; <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#16a34a">Upload new list</a></div>'
+    + '</div>';
+  var c = document.getElementById('pd-bc-customers');
+  var d = document.getElementById('pd-bd-customers');
+  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  if(typeof checkReady==="function") checkReady();
+}
+function pdClearAndReload_customers() {
+  pdClear_customers();
+  location.reload();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Restore saved postcodes
+  var saved = pdLoad_customers();
+  if (saved && saved.data && saved.data.length) {
+    customerData = saved.data;
+    pdShowRestoredBadge_customers(saved);
+  }
+
+  // Wrap parseCustomers to save after every upload
+  if (typeof parseCustomers === 'function') {
+    var _orig = parseCustomers;
+    parseCustomers = function(text) {
+      _orig(text);
+      if (customerData && customerData.length > 0) {
+        pdSave_customers(customerData);
+      }
+    };
+  }
+});
+</script>
 </body></html>`;
 
   const w=window.open('','_blank');

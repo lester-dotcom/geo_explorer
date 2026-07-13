@@ -186,207 +186,158 @@ def saved_badge_html(dataset='customers', color='#16a34a'):
 
 
 # ── Per-tool patchers ──────────────────────────────────────────────────────────
+# Strategy: inject storage helpers in <head>, then append a single <script>
+# block before </body> that wraps the tool's parse function and handles restore.
+# This avoids fragile regex injection into function bodies.
+
+def _badge_js(dataset='customers', color='#16a34a', label_id='uploadLabel', extra_js=''):
+    """Returns JS that shows the restored-data badge and wires up the clear link."""
+    return f"""
+function pdShowRestoredBadge_{dataset}(saved) {{
+  var lbl = document.getElementById('{label_id}');
+  if (!lbl) return;
+  lbl.outerHTML = '<div id="pd-badge-{dataset}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
+    + '<div style="font-weight:600;color:{color}">\\u2713 <span id="pd-bc-{dataset}"></span> saved</div>'
+    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-{dataset}"></span>'
+    + ' &middot; <a href="#" onclick="pdClearAndReload_{dataset}();return false;" style="color:{color}">Upload new list</a></div>'
+    + '</div>';
+  var c = document.getElementById('pd-bc-{dataset}');
+  var d = document.getElementById('pd-bd-{dataset}');
+  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+  {extra_js}
+}}
+function pdClearAndReload_{dataset}() {{
+  pdClear_{dataset}();
+  location.reload();
+}}"""
+
 
 def patch_local_coverage(html, slug):
-    """
-    local-coverage.html:
-    - customerData populated by parseCustomers()
-    - Save after parseCustomers completes (after checkReady())
-    - Restore on page load into customerData, update UI
-    """
-    # 1. Inject head script
     html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
-    # 2. After `let customerData = [];` inject restore block
-    restore = r"""
-// ── localStorage restore ──
-(function() {
+    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel', extra_js='if(typeof checkReady==="function") checkReady();')
+    body_script = f"""
+<script>
+/* ── PD client persistence: local-coverage ── */
+{badge_js}
+
+document.addEventListener('DOMContentLoaded', function() {{
+  // Restore saved postcodes
   var saved = pdLoad_customers();
-  if (saved) {
+  if (saved && saved.data && saved.data.length) {{
     customerData = saved.data;
-    // defer UI update until DOM ready
-    document.addEventListener('DOMContentLoaded', function() {
-      pdShowRestoredBadge_customers(saved);
-    });
-  }
-})();"""
-    html = html.replace('let customerData = [];', 'let customerData = [];\n' + restore, 1)
+    pdShowRestoredBadge_customers(saved);
+  }}
 
-    # 3. Add save call at end of parseCustomers (after checkReady())
-    # Pattern: checkReady(); at end of parseCustomers function
-    html = re.sub(
-        r'(customerData\.push\(pc\);\s*\}\s*checkReady\(\);)',
-        r'\1\n  pdSave_customers(customerData);',
-        html, count=1
-    )
-
-    # 4. Add pdShowRestoredBadge_customers function + pdClearAndReload_customers
-    badge = saved_badge_html('customers')
-    inject_fn = f"""
-// ── Client storage UI ──
-function pdShowRestoredBadge_customers(saved) {{
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = `{badge}`;
-  var c = document.getElementById('pd-badge-count-customers');
-  var d = document.getElementById('pd-badge-date-customers');
-  if (c) c.textContent = saved.count + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-  checkReady();
-}}
-function pdClearAndReload_customers() {{
-  pdClear_customers();
-  location.reload();
-}}
-"""
-    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+  // Wrap parseCustomers to save after every upload
+  if (typeof parseCustomers === 'function') {{
+    var _orig = parseCustomers;
+    parseCustomers = function(text) {{
+      _orig(text);
+      if (customerData && customerData.length > 0) {{
+        pdSave_customers(customerData);
+      }}
+    }};
+  }}
+}});
+</script>"""
+    html = html.replace('</body>', body_script + '\n</body>', 1)
     return html
 
 
 def patch_dwelling_explorer(html, slug):
-    """
-    dwelling-explorer.html:
-    - customerData populated by parseCustomers()
-    - Save after parseCustomers, restore on load
-    """
     html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
-    restore = r"""
-(function() {
+    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel',
+        extra_js='var btn=document.getElementById("analyseBtn");if(btn)btn.style.display="";')
+    body_script = f"""
+<script>
+/* ── PD client persistence: dwelling-explorer ── */
+{badge_js}
+
+document.addEventListener('DOMContentLoaded', function() {{
   var saved = pdLoad_customers();
-  if (saved) {
+  if (saved && saved.data && saved.data.length) {{
     customerData = saved.data;
-    document.addEventListener('DOMContentLoaded', function() {
-      pdShowRestoredBadge_customers(saved);
-    });
-  }
-})();"""
-    html = html.replace('let customerData = [];', 'let customerData = [];\n' + restore, 1)
+    pdShowRestoredBadge_customers(saved);
+  }}
 
-    # In dwelling-explorer, parseCustomers ends with: checkReady() or shows analyseBtn
-    # Find the end of the parse function (after analyseBtn is shown)
-    html = re.sub(
-        r'(document\.getElementById\(\'analyseBtn\'\)\.style\.display\s*=\s*\'\';\s*\})',
-        r'\1\n  pdSave_customers(customerData);',
-        html, count=1
-    )
-
-    badge = saved_badge_html('customers')
-    inject_fn = f"""
-function pdShowRestoredBadge_customers(saved) {{
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = `{badge}`;
-  var c = document.getElementById('pd-badge-count-customers');
-  var d = document.getElementById('pd-badge-date-customers');
-  if (c) c.textContent = saved.count + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-  var btn = document.getElementById('analyseBtn');
-  if (btn) btn.style.display = '';
-}}
-function pdClearAndReload_customers() {{
-  pdClear_customers();
-  location.reload();
-}}
-"""
-    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+  if (typeof parseCustomers === 'function') {{
+    var _orig = parseCustomers;
+    parseCustomers = function(text) {{
+      _orig(text);
+      if (customerData && customerData.length > 0) {{
+        pdSave_customers(customerData);
+      }}
+    }};
+  }}
+}});
+</script>"""
+    html = html.replace('</body>', body_script + '\n</body>', 1)
     return html
 
 
 def patch_customer_map(html, slug):
-    """
-    customer-map.html:
-    - customerData populated by parseCSV()
-    - parseCSV ends with checkReady()
-    - Save after checkReady in parseCSV, restore on load
-    """
     html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
-    # customer-map: `let map, customerData = [], resultData = [], geocodeCache = {};`
-    restore = r"""
-document.addEventListener('DOMContentLoaded', function() {
+    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel',
+        extra_js='if(typeof checkReady==="function") checkReady();')
+    body_script = f"""
+<script>
+/* ── PD client persistence: customer-map ── */
+{badge_js}
+
+document.addEventListener('DOMContentLoaded', function() {{
   var saved = pdLoad_customers();
-  if (saved) {
+  if (saved && saved.data && saved.data.length) {{
     customerData = saved.data;
     pdShowRestoredBadge_customers(saved);
     if (typeof checkReady === 'function') checkReady();
-  }
-});"""
-    html = html.replace(
-        'let map, customerData = [], resultData = [], geocodeCache = {};',
-        'let map, customerData = [], resultData = [], geocodeCache = {};\n' + restore,
-        1
-    )
+  }}
 
-    # Save at end of parseCSV (after last checkReady())
-    html = re.sub(
-        r'(function parseCSV\(text\).*?checkReady\(\);\s*\})',
-        r'\1\n  pdSave_customers(customerData);',
-        html, count=1, flags=re.DOTALL
-    )
-
-    badge = saved_badge_html('customers')
-    inject_fn = f"""
-function pdShowRestoredBadge_customers(saved) {{
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = `{badge}`;
-  var c = document.getElementById('pd-badge-count-customers');
-  var d = document.getElementById('pd-badge-date-customers');
-  if (c) c.textContent = saved.count + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-}}
-function pdClearAndReload_customers() {{
-  pdClear_customers();
-  location.reload();
-}}
-"""
-    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+  if (typeof parseCSV === 'function') {{
+    var _orig = parseCSV;
+    parseCSV = function(text) {{
+      _orig(text);
+      if (customerData && customerData.length > 0) {{
+        pdSave_customers(customerData);
+      }}
+    }};
+  }}
+}});
+</script>"""
+    html = html.replace('</body>', body_script + '\n</body>', 1)
     return html
 
 
 def patch_hnw_finder(html, slug):
-    """
-    hnw-finder.html:
-    - Loads file text into #pasteArea textarea, then calls checkReady()
-    - customerData is populated from pasteArea content
-    - Persist the raw postcode text from pasteArea
-    """
-    # Use a text key for hnw (persists raw textarea content)
+    # hnw-finder loads text into #pasteArea, not directly into customerData
+    # Persist the raw textarea text instead
     key = f'geo_pd_{slug}_hnw_text'
     head_script = f"""
 <script>
 (function() {{
-  window.PD_HNW_KEY = '{key}';
   window.pdSaveHnw = function(text) {{
-    try {{ localStorage.setItem('{key}', JSON.stringify({{text: text, savedAt: new Date().toISOString()}})); }} catch(e) {{}}
+    try {{ localStorage.setItem('{key}', JSON.stringify({{text:text,savedAt:new Date().toISOString()}})); }} catch(e) {{}}
   }};
   window.pdLoadHnw = function() {{
-    try {{ var s = localStorage.getItem('{key}'); return s ? JSON.parse(s) : null; }} catch(e) {{ return null; }}
+    try {{ var s=localStorage.getItem('{key}'); return s?JSON.parse(s):null; }} catch(e) {{ return null; }}
   }};
   window.pdClearHnw = function() {{ localStorage.removeItem('{key}'); }};
 }})();
 </script>"""
     html = html.replace('</head>', head_script + '\n</head>', 1)
 
-    # After file loads into pasteArea and checkReady() is called, save it
-    html = re.sub(
-        r"(r\.onload\s*=\s*e\s*=>\s*\{[^}]*document\.getElementById\('pasteArea'\)\.value\s*=\s*e\.target\.result;[^}]*checkReady\(\);[^}]*\};)",
-        r'\1\n    pdSaveHnw(e.target.result);',
-        html, count=1, flags=re.DOTALL
-    )
+    badge_js = _badge_js('customers', '#7c3aed', 'uploadLabel',
+        extra_js='if(typeof checkReady==="function") checkReady();')
+    body_script = f"""
+<script>
+/* ── PD client persistence: hnw-finder ── */
+{badge_js}
 
-    # Also save when user types in pasteArea
-    html = re.sub(
-        r"(document\.getElementById\('pasteArea'\)\.addEventListener\('input',\s*checkReady\));",
-        r"document.getElementById('pasteArea').addEventListener('input', function() { checkReady(); pdSaveHnw(document.getElementById('pasteArea').value); });",
-        html, count=1
-    )
-
-    # Restore on DOMContentLoaded: pre-fill pasteArea and call checkReady
-    restore_badge = saved_badge_html('customers', '#7c3aed')
-    restore_js = f"""
 document.addEventListener('DOMContentLoaded', function() {{
+  // Restore: pre-fill pasteArea
   var saved = pdLoadHnw();
   if (saved && saved.text) {{
     var pa = document.getElementById('pasteArea');
@@ -394,90 +345,93 @@ document.addEventListener('DOMContentLoaded', function() {{
       pa.value = saved.text;
       if (typeof checkReady === 'function') checkReady();
     }}
-    var lbl = document.getElementById('uploadLabel');
-    if (lbl) {{
-      var lines = saved.text.trim().split('\\n').filter(function(l){{return l.trim();}}).length;
-      lbl.outerHTML = `{restore_badge}`;
-      var c = document.getElementById('pd-badge-count-customers');
-      var d = document.getElementById('pd-badge-date-customers');
-      if (c) c.textContent = lines + ' postcodes';
-      if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-    }}
+    var lines = saved.text.trim().split('\\n').filter(function(l){{return l.trim();}}).length;
+    var fakeCount = {{count: lines, savedAt: saved.savedAt, data:[]}};
+    pdShowRestoredBadge_customers(fakeCount);
+    var c = document.getElementById('pd-bc-customers');
+    if (c) c.textContent = lines + ' postcodes';
+  }}
+
+  // Save on file upload
+  var fi = document.getElementById('fileInput');
+  if (fi) {{
+    fi.addEventListener('change', function() {{
+      var f = fi.files[0]; if (!f) return;
+      var r = new FileReader();
+      r.onload = function(e) {{ pdSaveHnw(e.target.result); }};
+      r.readAsText(f);
+    }});
+  }}
+
+  // Save on textarea input
+  var pa = document.getElementById('pasteArea');
+  if (pa) {{
+    pa.addEventListener('input', function() {{
+      pdSaveHnw(pa.value);
+    }});
   }}
 }});
-function pdClearAndReload_customers() {{
-  pdClearHnw();
-  location.reload();
-}}
-"""
-    html = html.replace('</script>', restore_js + '\n</script>', 1)
+
+function pdClearAndReload_customers() {{ pdClearHnw(); location.reload(); }}
+</script>"""
+    html = html.replace('</body>', body_script + '\n</body>', 1)
     return html
 
 
 def patch_overlap_map(html, slug):
-    """
-    overlap-map.html:
-    - Two datasets: cData (customers ul-c) and lData (locations ul-l)
-    - parseCSV(text, datasetKey) handles both — ds==='c' for customers, ds==='l' for locations
-    """
-    # Inject two storage helpers
     head_c = storage_head_script(slug, 'customers')
     head_l = storage_head_script(slug, 'locations')
     html = html.replace('</head>', head_c + head_l + '\n</head>', 1)
 
-    # Find cData and lData declarations
-    restore = r"""
-(function() {
-  var sc = pdLoad_customers();
-  var sl = pdLoad_locations();
-  document.addEventListener('DOMContentLoaded', function() {
-    if (sc && sc.data && sc.data.length) {
-      cData = sc.data;
-      pdShowRestoredBadge('c', sc);
-      checkReady();
-    }
-    if (sl && sl.data && sl.data.length) {
-      lData = sl.data;
-      pdShowRestoredBadge('l', sl);
-      checkReady();
-    }
-  });
-})();"""
-
-    # Find first declaration of cData or lData
-    html = re.sub(
-        r'(let cData\s*=\s*\[\s*\],\s*lData\s*=\s*\[\s*\];)',
-        r'\1\n' + restore,
-        html, count=1
-    )
-
-    # Save after parseCSV completes for each dataset
-    html = re.sub(
-        r'(checkReady\(\);\s*\}(?=\s*function checkReady))',
-        r'\1\n  if (ds === "c") pdSave_customers(cData); else pdSave_locations(lData);',
-        html, count=1, flags=re.DOTALL
-    )
-
-    badge_c = saved_badge_html('customers', '#4f46e5')
-    badge_l = saved_badge_html('locations', '#d97706')
-
-    inject_fn = f"""
-function pdShowRestoredBadge(ds, saved) {{
+    body_script = f"""
+<script>
+/* ── PD client persistence: overlap-map ── */
+function pdShowRestoredBadge_overlap(ds, saved) {{
+  var color = ds === 'c' ? '#4f46e5' : '#d97706';
   var labelId = ds === 'c' ? 'ul-c' : 'ul-l';
+  var dataset = ds === 'c' ? 'customers' : 'locations';
   var lbl = document.getElementById(labelId);
   if (!lbl) return;
-  var badge = ds === 'c' ? `{badge_c}` : `{badge_l}`;
-  lbl.outerHTML = badge;
-  var suffix = ds === 'c' ? 'customers' : 'locations';
-  var c = document.getElementById('pd-badge-count-' + suffix);
-  var d = document.getElementById('pd-badge-date-' + suffix);
-  if (c) c.textContent = saved.count + (ds === 'c' ? ' customers' : ' locations');
+  lbl.outerHTML = '<div id="pd-badge-' + dataset + '" style="border:1.5px solid ' + color + ';border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
+    + '<div style="font-weight:600;color:' + color + '">\\u2713 <span id="pd-bc-' + dataset + '"></span> saved</div>'
+    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-' + dataset + '"></span>'
+    + ' &middot; <a href="#" onclick="pdClearAndReload_' + dataset + '();return false;" style="color:' + color + '">Upload new list</a></div>'
+    + '</div>';
+  var c = document.getElementById('pd-bc-' + dataset);
+  var d = document.getElementById('pd-bd-' + dataset);
+  if (c) c.textContent = (saved.count||0) + (ds==='c'?' customers':' locations');
   if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
 }}
 function pdClearAndReload_customers() {{ pdClear_customers(); location.reload(); }}
 function pdClearAndReload_locations() {{ pdClear_locations(); location.reload(); }}
-"""
-    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+
+document.addEventListener('DOMContentLoaded', function() {{
+  // Restore saved datasets
+  var sc = pdLoad_customers();
+  var sl = pdLoad_locations();
+  if (sc && sc.data && sc.data.length) {{
+    if (typeof cData !== 'undefined') cData = sc.data;
+    pdShowRestoredBadge_overlap('c', sc);
+    if (typeof checkReady === 'function') checkReady();
+  }}
+  if (sl && sl.data && sl.data.length) {{
+    if (typeof lData !== 'undefined') lData = sl.data;
+    pdShowRestoredBadge_overlap('l', sl);
+    if (typeof checkReady === 'function') checkReady();
+  }}
+
+  // Wrap parseCSV to save after upload
+  if (typeof parseCSV === 'function') {{
+    var _orig = parseCSV;
+    parseCSV = function(text, ds) {{
+      _orig(text, ds);
+      if (ds === 'c' && typeof cData !== 'undefined' && cData.length > 0) pdSave_customers(cData);
+      if (ds === 'l' && typeof lData !== 'undefined' && lData.length > 0) pdSave_locations(lData);
+    }};
+  }}
+}});
+</script>"""
+    html = html.replace('</body>', body_script + '\n</body>', 1)
     return html
 
 
