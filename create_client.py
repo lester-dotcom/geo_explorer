@@ -1,0 +1,516 @@
+#!/usr/bin/env python3
+"""
+create_client.py — Create a client-specific version of the Geo Intelligence Suite.
+
+Duplicates all tools to  clients/<slug>/  with localStorage persistence:
+  - Postcodes uploaded in any tool are saved in the browser
+  - They reload automatically on every visit (no re-upload needed)
+  - The client can re-upload at any time to update the data
+  - Original tools at /geo_explorer/ are untouched
+
+Usage:
+  python3 create_client.py --client "Acme Corp"
+  python3 create_client.py --client "Acme Corp" --slug acme  (custom URL slug)
+
+Then commit and push the clients/<slug>/ folder to deploy.
+"""
+
+import argparse
+import os
+import re
+import shutil
+import sys
+import unicodedata
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def slugify(text):
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode()
+    text = re.sub(r'[^\w\s-]', '', text.lower())
+    return re.sub(r'[\s-]+', '-', text).strip('-')
+
+
+def fix_asset_paths(html):
+    """Rewrite relative paths to shared JS/data files to use ../../ prefix."""
+    shared = {
+        'hnw_data.js', 'dwelling_data.js', 'valid_sectors.js', 'valid_districts.js',
+    }
+    # tool links in index.html
+    tool_html = {
+        'brand-map.html', 'customer-map.html', 'dwelling-explorer.html',
+        'hnw-finder.html', 'local-coverage.html', 'overlap-map.html',
+        'watchdog-report.html', 'profile-tool',
+    }
+
+    def rewrite(m):
+        attr, q, path = m.group(1), m.group(2), m.group(3)
+        if path.startswith(('http', 'data:', '#', '../../', '/')):
+            return m.group(0)
+        base = path.split('/')[-1].split('?')[0]
+        if base in shared:
+            return f'{attr}={q}../../{path}{q}'
+        return m.group(0)
+
+    return re.sub(r'(src|href)=(["\'])([^"\'#>\s]+)\2', rewrite, html)
+
+
+# ── localStorage snippet ───────────────────────────────────────────────────────
+
+def storage_head_script(slug, dataset='customers'):
+    """Returns a <script> block to inject in <head> with localStorage helpers."""
+    key = f'geo_pd_{slug}_{dataset}'
+    return f"""
+<script>
+/* ── Pratt Digital client storage ({dataset}) ── */
+(function() {{
+  window.PD_KEY_{dataset.upper()} = '{key}';
+  window.pdSave_{dataset} = function(data) {{
+    try {{
+      localStorage.setItem('{key}', JSON.stringify({{
+        data: data,
+        savedAt: new Date().toISOString(),
+        count: data.length
+      }}));
+    }} catch(e) {{}}
+  }};
+  window.pdLoad_{dataset} = function() {{
+    try {{
+      var s = localStorage.getItem('{key}');
+      if (!s) return null;
+      var obj = JSON.parse(s);
+      return obj && obj.data && obj.data.length ? obj : null;
+    }} catch(e) {{ return null; }}
+  }};
+  window.pdSavedAt_{dataset} = function() {{
+    try {{
+      var s = localStorage.getItem('{key}');
+      if (!s) return null;
+      return JSON.parse(s).savedAt || null;
+    }} catch(e) {{ return null; }}
+  }};
+  window.pdClear_{dataset} = function() {{
+    localStorage.removeItem('{key}');
+  }};
+}})();
+</script>"""
+
+
+def saved_badge_html(dataset='customers', color='#16a34a'):
+    """Returns HTML for the "loaded from storage" badge with an Update button."""
+    return f"""<div id="pd-storage-badge-{dataset}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;background:rgba(22,163,74,0.07);font-size:12px;">
+  <div style="font-weight:600;color:{color}">✓ <span id="pd-badge-count-{dataset}"></span> saved</div>
+  <div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-badge-date-{dataset}"></span> · <a href="#" onclick="pdClearAndReload_{dataset}();return false;" style="color:{color}">Upload new list</a></div>
+</div>"""
+
+
+# ── Per-tool patchers ──────────────────────────────────────────────────────────
+
+def patch_local_coverage(html, slug):
+    """
+    local-coverage.html:
+    - customerData populated by parseCustomers()
+    - Save after parseCustomers completes (after checkReady())
+    - Restore on page load into customerData, update UI
+    """
+    # 1. Inject head script
+    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
+
+    # 2. After `let customerData = [];` inject restore block
+    restore = r"""
+// ── localStorage restore ──
+(function() {
+  var saved = pdLoad_customers();
+  if (saved) {
+    customerData = saved.data;
+    // defer UI update until DOM ready
+    document.addEventListener('DOMContentLoaded', function() {
+      pdShowRestoredBadge_customers(saved);
+    });
+  }
+})();"""
+    html = html.replace('let customerData = [];', 'let customerData = [];\n' + restore, 1)
+
+    # 3. Add save call at end of parseCustomers (after checkReady())
+    # Pattern: checkReady(); at end of parseCustomers function
+    html = re.sub(
+        r'(customerData\.push\(pc\);\s*\}\s*checkReady\(\);)',
+        r'\1\n  pdSave_customers(customerData);',
+        html, count=1
+    )
+
+    # 4. Add pdShowRestoredBadge_customers function + pdClearAndReload_customers
+    badge = saved_badge_html('customers')
+    inject_fn = f"""
+// ── Client storage UI ──
+function pdShowRestoredBadge_customers(saved) {{
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = `{badge}`;
+  var c = document.getElementById('pd-badge-count-customers');
+  var d = document.getElementById('pd-badge-date-customers');
+  if (c) c.textContent = saved.count + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+  checkReady();
+}}
+function pdClearAndReload_customers() {{
+  pdClear_customers();
+  location.reload();
+}}
+"""
+    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+    return html
+
+
+def patch_dwelling_explorer(html, slug):
+    """
+    dwelling-explorer.html:
+    - customerData populated by parseCustomers()
+    - Save after parseCustomers, restore on load
+    """
+    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
+
+    restore = r"""
+(function() {
+  var saved = pdLoad_customers();
+  if (saved) {
+    customerData = saved.data;
+    document.addEventListener('DOMContentLoaded', function() {
+      pdShowRestoredBadge_customers(saved);
+    });
+  }
+})();"""
+    html = html.replace('let customerData = [];', 'let customerData = [];\n' + restore, 1)
+
+    # In dwelling-explorer, parseCustomers ends with: checkReady() or shows analyseBtn
+    # Find the end of the parse function (after analyseBtn is shown)
+    html = re.sub(
+        r'(document\.getElementById\(\'analyseBtn\'\)\.style\.display\s*=\s*\'\';\s*\})',
+        r'\1\n  pdSave_customers(customerData);',
+        html, count=1
+    )
+
+    badge = saved_badge_html('customers')
+    inject_fn = f"""
+function pdShowRestoredBadge_customers(saved) {{
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = `{badge}`;
+  var c = document.getElementById('pd-badge-count-customers');
+  var d = document.getElementById('pd-badge-date-customers');
+  if (c) c.textContent = saved.count + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+  var btn = document.getElementById('analyseBtn');
+  if (btn) btn.style.display = '';
+}}
+function pdClearAndReload_customers() {{
+  pdClear_customers();
+  location.reload();
+}}
+"""
+    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+    return html
+
+
+def patch_customer_map(html, slug):
+    """
+    customer-map.html:
+    - customerData populated by parseCSV()
+    - parseCSV ends with checkReady()
+    - Save after checkReady in parseCSV, restore on load
+    """
+    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
+
+    # customer-map: `let map, customerData = [], resultData = [], geocodeCache = {};`
+    restore = r"""
+document.addEventListener('DOMContentLoaded', function() {
+  var saved = pdLoad_customers();
+  if (saved) {
+    customerData = saved.data;
+    pdShowRestoredBadge_customers(saved);
+    if (typeof checkReady === 'function') checkReady();
+  }
+});"""
+    html = html.replace(
+        'let map, customerData = [], resultData = [], geocodeCache = {};',
+        'let map, customerData = [], resultData = [], geocodeCache = {};\n' + restore,
+        1
+    )
+
+    # Save at end of parseCSV (after last checkReady())
+    html = re.sub(
+        r'(function parseCSV\(text\).*?checkReady\(\);\s*\})',
+        r'\1\n  pdSave_customers(customerData);',
+        html, count=1, flags=re.DOTALL
+    )
+
+    badge = saved_badge_html('customers')
+    inject_fn = f"""
+function pdShowRestoredBadge_customers(saved) {{
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = `{badge}`;
+  var c = document.getElementById('pd-badge-count-customers');
+  var d = document.getElementById('pd-badge-date-customers');
+  if (c) c.textContent = saved.count + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+}}
+function pdClearAndReload_customers() {{
+  pdClear_customers();
+  location.reload();
+}}
+"""
+    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+    return html
+
+
+def patch_hnw_finder(html, slug):
+    """
+    hnw-finder.html:
+    - Loads file text into #pasteArea textarea, then calls checkReady()
+    - customerData is populated from pasteArea content
+    - Persist the raw postcode text from pasteArea
+    """
+    # Use a text key for hnw (persists raw textarea content)
+    key = f'geo_pd_{slug}_hnw_text'
+    head_script = f"""
+<script>
+(function() {{
+  window.PD_HNW_KEY = '{key}';
+  window.pdSaveHnw = function(text) {{
+    try {{ localStorage.setItem('{key}', JSON.stringify({{text: text, savedAt: new Date().toISOString()}})); }} catch(e) {{}}
+  }};
+  window.pdLoadHnw = function() {{
+    try {{ var s = localStorage.getItem('{key}'); return s ? JSON.parse(s) : null; }} catch(e) {{ return null; }}
+  }};
+  window.pdClearHnw = function() {{ localStorage.removeItem('{key}'); }};
+}})();
+</script>"""
+    html = html.replace('</head>', head_script + '\n</head>', 1)
+
+    # After file loads into pasteArea and checkReady() is called, save it
+    html = re.sub(
+        r"(r\.onload\s*=\s*e\s*=>\s*\{[^}]*document\.getElementById\('pasteArea'\)\.value\s*=\s*e\.target\.result;[^}]*checkReady\(\);[^}]*\};)",
+        r'\1\n    pdSaveHnw(e.target.result);',
+        html, count=1, flags=re.DOTALL
+    )
+
+    # Also save when user types in pasteArea
+    html = re.sub(
+        r"(document\.getElementById\('pasteArea'\)\.addEventListener\('input',\s*checkReady\));",
+        r"document.getElementById('pasteArea').addEventListener('input', function() { checkReady(); pdSaveHnw(document.getElementById('pasteArea').value); });",
+        html, count=1
+    )
+
+    # Restore on DOMContentLoaded: pre-fill pasteArea and call checkReady
+    restore_badge = saved_badge_html('customers', '#7c3aed')
+    restore_js = f"""
+document.addEventListener('DOMContentLoaded', function() {{
+  var saved = pdLoadHnw();
+  if (saved && saved.text) {{
+    var pa = document.getElementById('pasteArea');
+    if (pa) {{
+      pa.value = saved.text;
+      if (typeof checkReady === 'function') checkReady();
+    }}
+    var lbl = document.getElementById('uploadLabel');
+    if (lbl) {{
+      var lines = saved.text.trim().split('\\n').filter(function(l){{return l.trim();}}).length;
+      lbl.outerHTML = `{restore_badge}`;
+      var c = document.getElementById('pd-badge-count-customers');
+      var d = document.getElementById('pd-badge-date-customers');
+      if (c) c.textContent = lines + ' postcodes';
+      if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+    }}
+  }}
+}});
+function pdClearAndReload_customers() {{
+  pdClearHnw();
+  location.reload();
+}}
+"""
+    html = html.replace('</script>', restore_js + '\n</script>', 1)
+    return html
+
+
+def patch_overlap_map(html, slug):
+    """
+    overlap-map.html:
+    - Two datasets: cData (customers ul-c) and lData (locations ul-l)
+    - parseCSV(text, datasetKey) handles both — ds==='c' for customers, ds==='l' for locations
+    """
+    # Inject two storage helpers
+    head_c = storage_head_script(slug, 'customers')
+    head_l = storage_head_script(slug, 'locations')
+    html = html.replace('</head>', head_c + head_l + '\n</head>', 1)
+
+    # Find cData and lData declarations
+    restore = r"""
+(function() {
+  var sc = pdLoad_customers();
+  var sl = pdLoad_locations();
+  document.addEventListener('DOMContentLoaded', function() {
+    if (sc && sc.data && sc.data.length) {
+      cData = sc.data;
+      pdShowRestoredBadge('c', sc);
+      checkReady();
+    }
+    if (sl && sl.data && sl.data.length) {
+      lData = sl.data;
+      pdShowRestoredBadge('l', sl);
+      checkReady();
+    }
+  });
+})();"""
+
+    # Find first declaration of cData or lData
+    html = re.sub(
+        r'(let cData\s*=\s*\[\s*\],\s*lData\s*=\s*\[\s*\];)',
+        r'\1\n' + restore,
+        html, count=1
+    )
+
+    # Save after parseCSV completes for each dataset
+    html = re.sub(
+        r'(checkReady\(\);\s*\}(?=\s*function checkReady))',
+        r'\1\n  if (ds === "c") pdSave_customers(cData); else pdSave_locations(lData);',
+        html, count=1, flags=re.DOTALL
+    )
+
+    badge_c = saved_badge_html('customers', '#4f46e5')
+    badge_l = saved_badge_html('locations', '#d97706')
+
+    inject_fn = f"""
+function pdShowRestoredBadge(ds, saved) {{
+  var labelId = ds === 'c' ? 'ul-c' : 'ul-l';
+  var lbl = document.getElementById(labelId);
+  if (!lbl) return;
+  var badge = ds === 'c' ? `{badge_c}` : `{badge_l}`;
+  lbl.outerHTML = badge;
+  var suffix = ds === 'c' ? 'customers' : 'locations';
+  var c = document.getElementById('pd-badge-count-' + suffix);
+  var d = document.getElementById('pd-badge-date-' + suffix);
+  if (c) c.textContent = saved.count + (ds === 'c' ? ' customers' : ' locations');
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
+}}
+function pdClearAndReload_customers() {{ pdClear_customers(); location.reload(); }}
+function pdClearAndReload_locations() {{ pdClear_locations(); location.reload(); }}
+"""
+    html = html.replace('</script>', inject_fn + '\n</script>', 1)
+    return html
+
+
+# ── Tool registry ──────────────────────────────────────────────────────────────
+
+def get_patcher(filename, slug):
+    name = os.path.basename(filename).lower()
+    if name == 'local-coverage.html':
+        return lambda h: patch_local_coverage(h, slug)
+    if name == 'dwelling-explorer.html':
+        return lambda h: patch_dwelling_explorer(h, slug)
+    if name == 'customer-map.html':
+        return lambda h: patch_customer_map(h, slug)
+    if name == 'hnw-finder.html':
+        return lambda h: patch_hnw_finder(h, slug)
+    if name == 'overlap-map.html':
+        return lambda h: patch_overlap_map(h, slug)
+    return None
+
+
+TOOL_FILES = [
+    'index.html',
+    'local-coverage.html',
+    'dwelling-explorer.html',
+    'customer-map.html',
+    'hnw-finder.html',
+    'overlap-map.html',
+    'brand-map.html',
+    'watchdog-report.html',
+    'profile-tool (1).html',
+]
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description='Create a client Geo Explorer instance')
+    parser.add_argument('--client', required=True, help='Client display name (e.g. "Acme Corp")')
+    parser.add_argument('--slug', help='URL slug override (default: derived from client name)')
+    args = parser.parse_args()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    slug = args.slug or slugify(args.client)
+    out_dir = os.path.join(script_dir, 'clients', slug)
+
+    print(f"\n── Geo Explorer Client Builder ────────────────────────────")
+    print(f"  Client  : {args.client}")
+    print(f"  Slug    : {slug}")
+    print(f"  Output  : clients/{slug}/")
+    print()
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    processed = 0
+    for fname in TOOL_FILES:
+        src = os.path.join(script_dir, fname)
+        if not os.path.exists(src):
+            # Try stripping parenthetical suffix (e.g. "profile-tool (1).html" → "profile-tool.html")
+            alt_name = re.sub(r'\s*\(\d+\)', '', fname)
+            alt = os.path.join(script_dir, alt_name)
+            if os.path.exists(alt):
+                src = alt
+                fname = alt_name
+            else:
+                print(f"  Skipping (not found): {fname}")
+                continue
+
+        dst_name = re.sub(r'\s*\(\d+\)', '', os.path.basename(fname))
+        dst = os.path.join(out_dir, dst_name)
+
+        with open(src, 'r', encoding='utf-8') as f:
+            html = f.read()
+
+        # Fix asset paths
+        html = fix_asset_paths(html)
+
+        # Update page title
+        html = re.sub(
+            r'(<title>[^<]*)(</title>)',
+            rf'\g<1> · {args.client}\g<2>',
+            html, count=1
+        )
+
+        # Apply tool-specific persistence patches
+        patcher = get_patcher(dst_name, slug)
+        if patcher:
+            html = patcher(html)
+            print(f"  ✓ Patched  : {dst_name}  (localStorage persistence added)")
+        else:
+            print(f"  ○ Copied   : {dst_name}")
+
+        with open(dst, 'w', encoding='utf-8') as f:
+            f.write(html)
+        processed += 1
+
+    # Copy profile-tool directory if present
+    profile_src = os.path.join(script_dir, 'profile-tool')
+    if os.path.isdir(profile_src):
+        profile_dst = os.path.join(out_dir, 'profile-tool')
+        if os.path.exists(profile_dst):
+            shutil.rmtree(profile_dst)
+        shutil.copytree(profile_src, profile_dst)
+        print(f"  ○ Copied   : profile-tool/")
+
+    print(f"\n  {processed} files written to clients/{slug}/")
+    print(f"\n── Next steps ──────────────────────────────────────────────")
+    print(f"  cd to your geo_explorer repo folder, then:")
+    print(f"    git add clients/{slug}")
+    print(f'    git commit -m "Add {args.client} client instance"')
+    print(f"    git push origin main")
+    print()
+    print(f"  Live URL (after push — allow 1-2 min for GitHub Pages):")
+    print(f"    https://lester-dotcom.github.io/geo_explorer/clients/{slug}/")
+    print()
+
+
+if __name__ == '__main__':
+    main()

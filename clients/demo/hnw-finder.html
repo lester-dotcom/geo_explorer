@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HNW Area Finder — Pratt Digital · Demo Client</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --pd-green: #aec90b; --pd-slate: #4c565c; --pd-dark: #1a1f21;
+      --text: #1a1f21; --muted: #6b7280; --border: #e2e0d8;
+      --surface: #f9f8f4; --surface2: #f0efe9;
+      --gold1: #f5f0e0; --gold5: #d4a017; --gold10: #8B6914;
+      --hnw-low: #e8e6df; --hnw-mid: #d4a017; --hnw-high: #8B6914;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', sans-serif; color: var(--text); background: var(--surface); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    header { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: #fff; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .header-logo { height: 32px; }
+    .header-divider { width: 1px; height: 24px; background: var(--border); }
+    header h1 { font-size: 15px; font-weight: 600; color: var(--pd-slate); }
+    .header-badge { margin-left: auto; background: linear-gradient(135deg, #d4a017, #8B6914); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; letter-spacing: .04em; text-transform: uppercase; }
+
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    .sidebar { width: 280px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; padding: 16px; gap: 16px; }
+
+    .section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 8px; }
+
+    .threshold-wrap { background: var(--surface); border-radius: 10px; padding: 14px; border: 1px solid var(--border); }
+    .threshold-display { font-size: 28px; font-weight: 700; color: var(--pd-slate); line-height: 1; }
+    .threshold-sub { font-size: 11px; color: var(--muted); margin-top: 3px; margin-bottom: 12px; }
+    input[type=range] { width: 100%; accent-color: var(--gold5); cursor: pointer; }
+    .threshold-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-card { background: var(--surface); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+    .stat-card .num { font-size: 20px; font-weight: 700; color: var(--pd-slate); }
+    .stat-card .lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .upload-label { display: block; padding: 10px 12px; border: 1.5px dashed var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--muted); text-align: center; transition: border-color .15s; }
+    .upload-label:hover { border-color: var(--pd-green); color: var(--text); }
+    .upload-label input { display: none; }
+    .upload-label.has-file { border-color: var(--pd-green); color: var(--pd-slate); font-weight: 500; }
+    textarea { width: 100%; height: 80px; resize: vertical; font-family: 'DM Mono', monospace; font-size: 11px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+    textarea:focus { outline: none; border-color: var(--pd-green); }
+    .format-hint { font-size: 10px; color: var(--muted); line-height: 1.5; }
+
+    .btn { width: 100%; padding: 9px 14px; border-radius: 8px; border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; transition: opacity .1s; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--pd-green); color: var(--pd-slate); }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-secondary { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+    .progress-wrap { display: none; }
+    .progress-wrap.active { display: block; }
+    .progress-bar-bg { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+    .progress-bar-fill { height: 100%; background: var(--pd-green); border-radius: 2px; transition: width .2s; width: 0%; }
+    .progress-text { font-size: 11px; color: var(--muted); }
+
+    .status-msg { font-size: 11px; color: var(--muted); line-height: 1.5; padding: 8px 10px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); }
+    .status-msg.success { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+    .status-msg.error { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+
+    .map-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .map-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+    .seg { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--surface); }
+    .seg button { padding: 5px 11px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; border: none; background: transparent; cursor: pointer; color: var(--muted); white-space: nowrap; }
+    .seg button.active { background: var(--pd-slate); color: #fff; font-weight: 600; }
+    .seg button:hover:not(.active) { color: var(--text); }
+    .export-btn { margin-left: auto; padding: 6px 13px; font-family: 'DM Sans', sans-serif; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text); transition: background .1s; }
+    .export-btn:hover { background: var(--surface2); }
+    .export-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .hnw-legend { display: flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 11px; color: var(--muted); }
+    .hnw-gradient { width: 80px; height: 8px; border-radius: 4px; background: linear-gradient(to right, var(--hnw-low), var(--hnw-mid), var(--hnw-high)); }
+
+    #map { flex: 1; }
+
+    .band-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 11px; }
+    .band-label { width: 52px; font-family: 'DM Mono', monospace; font-weight: 500; color: var(--pd-slate); flex-shrink: 0; }
+    .band-bar-wrap { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .band-bar-fill { height: 100%; border-radius: 3px; }
+    .band-count { width: 28px; text-align: right; color: var(--muted); flex-shrink: 0; }
+    .band-pct { width: 32px; text-align: right; color: var(--muted); flex-shrink: 0; font-size: 10px; }
+
+    .overlay-badge { position: absolute; bottom: 10px; left: 10px; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 11px; color: var(--muted); box-shadow: 0 2px 6px rgba(0,0,0,.08); pointer-events: none; display: none; }
+  </style>
+
+<script>
+(function() {
+  window.PD_HNW_KEY = 'geo_pd_demo_hnw_text';
+  window.pdSaveHnw = function(text) {
+    try { localStorage.setItem('geo_pd_demo_hnw_text', JSON.stringify({text: text, savedAt: new Date().toISOString()})); } catch(e) {}
+  };
+  window.pdLoadHnw = function() {
+    try { var s = localStorage.getItem('geo_pd_demo_hnw_text'); return s ? JSON.parse(s) : null; } catch(e) { return null; }
+  };
+  window.pdClearHnw = function() { localStorage.removeItem('geo_pd_demo_hnw_text'); };
+})();
+
+document.addEventListener('DOMContentLoaded', function() {
+  var saved = pdLoadHnw();
+  if (saved && saved.text) {
+    var pa = document.getElementById('pasteArea');
+    if (pa) {
+      pa.value = saved.text;
+      if (typeof checkReady === 'function') checkReady();
+    }
+    var lbl = document.getElementById('uploadLabel');
+    if (lbl) {
+      var lines = saved.text.trim().split('\n').filter(function(l){return l.trim();}).length;
+      lbl.outerHTML = `<div id="pd-storage-badge-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;background:rgba(22,163,74,0.07);font-size:12px;">
+  <div style="font-weight:600;color:#7c3aed">✓ <span id="pd-badge-count-customers"></span> saved</div>
+  <div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-badge-date-customers"></span> · <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#7c3aed">Upload new list</a></div>
+</div>`;
+      var c = document.getElementById('pd-badge-count-customers');
+      var d = document.getElementById('pd-badge-date-customers');
+      if (c) c.textContent = lines + ' postcodes';
+      if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    }
+  }
+});
+function pdClearAndReload_customers() {
+  pdClearHnw();
+  location.reload();
+}
+
+</script>
+</head>
+<body>
+<header>
+  <img class="header-logo" src="profile-tool/logo.jpg" alt="Pratt Digital">
+  <div class="header-divider"></div>
+  <h1>HNW Area Finder</h1>
+  <span class="header-badge">✦ Premium</span>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+
+    <div>
+      <div class="section-label">HNW threshold</div>
+      <div class="threshold-wrap">
+        <div class="threshold-display" id="thresholdDisplay">20%</div>
+        <div class="threshold-sub" id="thresholdSub">Top 20% of districts by affluence</div>
+        <input type="range" id="thresholdSlider" min="5" max="50" value="20" step="5" oninput="onSliderChange(this.value)">
+        <div class="threshold-labels"><span>Top 5%</span><span>Top 50%</span></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">England: ONS IMD 2019 &middot; Scotland &amp; Wales: SIMD/WIMD estimates</div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="num" id="statDistricts">—</div><div class="lbl">HNW districts</div></div>
+      <div class="stat-card"><div class="num" id="statSectors">—</div><div class="lbl">HNW sectors</div></div>
+    </div>
+
+    <div>
+      <div class="section-label">Overlay your customers <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+      <label class="upload-label" id="uploadLabel">
+        <input type="file" id="fileInput" accept=".csv,.txt">
+        📂 <strong>Upload CSV</strong> or drag &amp; drop
+        <div id="fileName" style="font-size:11px;font-weight:500;margin-top:3px;color:var(--pd-green)"></div>
+      </label>
+      <textarea id="pasteArea" placeholder="Paste postcodes here&#10;SW1A 2AA&#10;TN21 8HQ&#10;&#10;One per row. Optional." style="margin-top:8px"></textarea>
+      <div class="format-hint" style="margin-top:4px">Upload to see which HNW areas you already cover.</div>
+    </div>
+
+    <button class="btn btn-primary" id="overlayBtn" onclick="overlayCustomers()" disabled>Plot customer overlay</button>
+    <button class="btn btn-secondary" id="clearOverlayBtn" onclick="clearOverlay()" style="display:none">Clear overlay</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Geocoding…</div>
+    </div>
+
+    <div id="statusMsg" class="status-msg">Adjust the slider to explore high-net-worth postcode districts across England.</div>
+
+    <div id="customerReport" style="display:none;padding-top:12px;border-top:1px solid var(--border)">
+      <div class="section-label" style="margin-bottom:8px">Customer HNW breakdown</div>
+      <div id="reportSummary" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+      <div id="reportBands"></div>
+    </div>
+
+    <div style="padding-top:12px;border-top:1px solid var(--border)">
+      <div class="format-hint" style="line-height:1.7">
+        <strong>Scores out of 10</strong><br>
+        Based on ONS Income Deprivation 2019.<br>
+        Band 10 = lowest income deprivation nationally (most affluent ~10%). Band 1 = highest deprivation. Scored at postcode district level from LSOA income data.
+      </div>
+    </div>
+
+  </div>
+
+  <div class="map-area">
+    <div class="map-toolbar">
+      <div class="seg">
+        <button id="btnHNW" class="active" onclick="setMapMode('hnw')">HNW districts</button>
+        <button id="btnOverlay" onclick="setMapMode('overlay')" style="display:none">Customer overlay</button>
+      </div>
+      <div class="seg" id="customerFilters" style="display:none">
+        <button id="btnShowInHNW" class="active" onclick="toggleCustomerFilter('in')">✦ In HNW</button>
+        <button id="btnShowOutHNW" class="active" onclick="toggleCustomerFilter('out')">Outside HNW</button>
+        <button id="btnShowGaps" onclick="toggleCustomerFilter('gaps')" title="HNW areas with no customers">HNW gaps</button>
+      </div>
+      <div class="hnw-legend">
+        <span>Lower</span>
+        <div class="hnw-gradient"></div>
+        <span>Higher affluence</span>
+      </div>
+      <button class="export-btn" id="briefBtn" onclick="generateHNWBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Client brief</button>
+      <button class="export-btn" id="exportBtn" onclick="exportXLSX()" disabled>Export XLSX ↓</button>
+    </div>
+    <div style="position:relative;flex:1;display:flex;flex-direction:column">
+      <div id="map"></div>
+      <div class="overlay-badge" id="overlayBadge"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="../../profile-tool/valid_districts.js"></script>
+<script src="../../valid_sectors.js"></script>
+<script src="../../hnw_data.js"></script>
+<script>
+
+// ── Map init ──────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [52.5, -1.5], zoom: 6, zoomControl: true });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CartoCDN', maxZoom: 19
+}).addTo(map);
+
+let hnwLayer = null, customerLayer = null, gapLayer = null, customerData = [], overlayResults = [];
+let currentThreshold = 20;
+let mapMode = 'hnw';
+let showInHNW = true, showOutHNW = true, showGaps = false;
+
+// ── HNW colour scale ──────────────────────────────────────────────────────
+function hnwColour(band) {
+  // band 1-10, 10=most affluent
+  const colours = ['#e8e6df','#ddd8c4','#d4cb9a','#cfc070','#d4a017',
+                   '#c99010','#be7f0d','#aa6e0a','#956008','#8B6914'];
+  return colours[Math.min(band - 1, 9)];
+}
+
+// ── Core: draw HNW districts ──────────────────────────────────────────────
+function validCoords(lat, lng) {
+  if (!lat || !lng) return false;
+  // Tighter mainland GB + NI bounds — excludes open-sea coordinates
+  if (lat < 49.9 || lat > 60.9) return false;
+  if (lng < -7.6 || lng > 1.8) return false;
+  // Exclude the patch of open Atlantic/Celtic Sea west of Cornwall
+  if (lat < 51.5 && lng < -5.8) return false;
+  return true;
+}
+
+function getFilteredDistricts() {
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  return Object.entries(HNW_DATA).filter(([, d]) => d.hnw >= cutoff && validCoords(d.lat, d.lng));
+}
+
+function drawHNWLayer() {
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer = null; }
+  const districts = getFilteredDistricts();
+  const lg = L.layerGroup();
+  for (const [district, d] of districts) {
+    L.circleMarker([d.lat, d.lng], {
+      radius: 6, fillColor: hnwColour(d.hnw), color: '#fff',
+      fillOpacity: 0.8, weight: 1
+    }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10`).addTo(lg);
+  }
+  hnwLayer = lg;
+  lg.addTo(map);
+
+  // Update stats
+  const sectorCount = districts.reduce((s, [d]) => {
+    for (let i = 0; i <= 9; i++) { if (typeof VALID_SECTORS !== 'undefined' && VALID_SECTORS.has(`${d} ${i}`)) s++; }
+    return s;
+  }, 0);
+  document.getElementById('statDistricts').textContent = districts.length.toLocaleString();
+  document.getElementById('statSectors').textContent = sectorCount ? sectorCount.toLocaleString() : (districts.length * 3).toLocaleString();
+  document.getElementById('exportBtn').disabled = false;
+}
+
+function onSliderChange(val) {
+  currentThreshold = parseInt(val);
+  document.getElementById('thresholdDisplay').textContent = `${val}%`;
+  document.getElementById('thresholdSub').textContent = `Top ${val}% of districts by affluence`;
+  drawHNWLayer();
+  if (overlayResults.length) { updateOverlayBadge(); renderCustomerReport(); }
+}
+
+// ── Map mode toggle ───────────────────────────────────────────────────────
+function setMapMode(mode) {
+  mapMode = mode;
+  document.getElementById('btnHNW').classList.toggle('active', mode === 'hnw');
+  document.getElementById('btnOverlay').classList.toggle('active', mode === 'overlay');
+  // Always show HNW layer; customer layer only when in overlay mode
+  if (hnwLayer && !map.hasLayer(hnwLayer)) hnwLayer.addTo(map);
+  if (customerLayer) {
+    if (mode === 'overlay' && !map.hasLayer(customerLayer)) customerLayer.addTo(map);
+    if (mode === 'hnw' && map.hasLayer(customerLayer)) map.removeLayer(customerLayer);
+  }
+  document.getElementById('customerFilters').style.display = (mode === 'overlay' && overlayResults.length) ? '' : 'none';
+}
+
+function toggleCustomerFilter(which) {
+  if (which === 'in') showInHNW = !showInHNW;
+  if (which === 'out') showOutHNW = !showOutHNW;
+  if (which === 'gaps') showGaps = !showGaps;
+  document.getElementById('btnShowInHNW').classList.toggle('active', showInHNW);
+  document.getElementById('btnShowOutHNW').classList.toggle('active', showOutHNW);
+  document.getElementById('btnShowGaps').classList.toggle('active', showGaps);
+  redrawCustomerLayer();
+  redrawGapLayer();
+}
+
+function redrawGapLayer() {
+  if (gapLayer) { map.removeLayer(gapLayer); gapLayer = null; }
+  if (!showGaps || !overlayResults.length) return;
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const customerDistricts = new Set(overlayResults.map(r => r.district));
+  const lg = L.layerGroup();
+  for (const [district, d] of getFilteredDistricts()) {
+    if (customerDistricts.has(district)) continue;
+    L.circleMarker([d.lat, d.lng], {
+      radius: 6, fillColor: '#fff', color: '#8B6914',
+      fillOpacity: 0.7, weight: 2
+    }).bindPopup(`<strong>${district}</strong><br>HNW band: ${d.hnw}/10<br><em>No customers in this area</em>`).addTo(lg);
+  }
+  gapLayer = lg;
+  gapLayer.addTo(map);
+}
+
+function redrawCustomerLayer() {
+  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  if (!overlayResults.length) return;
+  const minBand = Math.ceil(10 * (1 - currentThreshold / 100));
+  const lg = L.layerGroup();
+  for (const r of overlayResults) {
+    const inHNW = r.hnwBand && r.hnwBand >= minBand;
+    if (inHNW && !showInHNW) continue;
+    if (!inHNW && !showOutHNW) continue;
+    L.circleMarker([r.lat, r.lng], {
+      radius: 5, fillColor: inHNW ? '#22c55e' : '#ef4444', color: inHNW ? '#22c55e' : '#ef4444',
+      fillOpacity: 0, weight: 2
+    }).bindPopup(`<strong>${r.postcode}</strong><br>${r.district}${r.hnwBand ? `<br>HNW band: ${r.hnwBand}/10` : '<br>Outside HNW data'}`).addTo(lg);
+  }
+  customerLayer = lg;
+  customerLayer.addTo(map);
+  // Re-add HNW on top at 70% opacity so it dominates but customers show through
+  if (hnwLayer) { map.removeLayer(hnwLayer); hnwLayer.addTo(map); }
+}
+
+// ── Customer overlay ──────────────────────────────────────────────────────
+function parseInput() {
+  const paste = document.getElementById('pasteArea').value.trim();
+  if (!paste) return [];
+  const ukPostcode = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i;
+  const seen = new Set();
+  const results = [];
+  for (const line of paste.split(/\n/)) {
+    // Try each cell in the row (handles CSVs where postcode is in any column)
+    const cells = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/); // CSV-aware split
+    for (const cell of cells) {
+      const m = cell.replace(/"/g, '').match(ukPostcode);
+      if (m) {
+        const pc = m[1].toUpperCase().replace(/\s+/g, ' ').trim();
+        if (!seen.has(pc)) { seen.add(pc); results.push(pc); }
+        break; // one postcode per row
+      }
+    }
+  }
+  return results;
+}
+
+document.getElementById('fileInput').addEventListener('change', function() {
+  const f = this.files[0]; if (!f) return;
+  document.getElementById('fileName').textContent = f.name;
+  document.getElementById('uploadLabel').classList.add('has-file');
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('pasteArea').value = e.target.result; checkReady(); };
+    pdSaveHnw(e.target.result);
+  r.readAsText(f);
+});
+
+document.getElementById('pasteArea').addEventListener('input', function() { checkReady(); pdSaveHnw(document.getElementById('pasteArea').value); });
+
+function checkReady() {
+  document.getElementById('overlayBtn').disabled = parseInput().length === 0;
+}
+
+async function overlayCustomers() {
+  const postcodes = parseInput();
+  if (!postcodes.length) return;
+
+  document.getElementById('progressWrap').classList.add('active');
+  document.getElementById('overlayBtn').disabled = true;
+
+  const BATCH = 100;
+  const geo = {};
+  let done = 0;
+
+  for (let i = 0; i < postcodes.length; i += BATCH) {
+    const batch = postcodes.slice(i, i + BATCH);
+    try {
+      const resp = await fetch('https://api.postcodes.io/postcodes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postcodes: batch })
+      });
+      const json = await resp.json();
+      for (const item of json.result || []) {
+        if (item.result) {
+          geo[item.query] = { lat: item.result.latitude, lng: item.result.longitude,
+            district: item.result.outcode, valid: true };
+        }
+      }
+    } catch(e) {}
+    done += batch.length;
+    const pct = Math.round(done / postcodes.length * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressText').textContent = `Geocoding ${done} of ${postcodes.length}…`;
+  }
+
+  overlayResults = postcodes.map(pc => {
+    const r = geo[pc];
+    if (!r || !validCoords(r.lat, r.lng)) return null;
+    const hnwEntry = HNW_DATA[r.district];
+    return { postcode: pc, lat: r.lat, lng: r.lng, district: r.district,
+      hnwBand: hnwEntry ? hnwEntry.hnw : null };
+  }).filter(Boolean);
+
+  redrawCustomerLayer();
+  document.getElementById('progressWrap').classList.remove('active');
+  document.getElementById('btnOverlay').style.display = '';
+  document.getElementById('clearOverlayBtn').style.display = '';
+  document.getElementById('briefBtn').style.display = '';
+  document.getElementById('overlayBtn').disabled = false;
+  setMapMode('overlay');
+  updateOverlayBadge();
+  renderCustomerReport();
+  document.getElementById('exportBtn').disabled = false;
+}
+
+function renderCustomerReport() {
+  if (!overlayResults.length) return;
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const total = overlayResults.length;
+  const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
+  const noData = overlayResults.filter(r => !r.hnwBand).length;
+
+  // Count by band
+  const bandCounts = {};
+  for (const r of overlayResults) {
+    const b = r.hnwBand || 'n/a';
+    bandCounts[b] = (bandCounts[b] || 0) + 1;
+  }
+  const maxCount = Math.max(...Object.values(bandCounts));
+
+  document.getElementById('customerReport').style.display = 'block';
+  document.getElementById('reportSummary').innerHTML =
+    `<strong>${inHNW.toLocaleString()}</strong> of <strong>${total.toLocaleString()}</strong> customers (${Math.round(inHNW/total*100)}%) are in your current HNW threshold (band ${cutoff}+).${noData ? ` <span style="color:var(--muted)">${noData} outside coverage area.</span>` : ''}`;
+
+  // Bands 10 down to 1
+  const rows = [];
+  for (let b = 10; b >= 1; b--) {
+    const count = bandCounts[b] || 0;
+    if (count === 0) continue;
+    const pct = Math.round(count / total * 100);
+    const isAbove = b >= cutoff;
+    const colour = hnwColour(b);
+    rows.push(`<div class="band-row">
+      <span class="band-label" style="color:${isAbove ? '#8B6914' : 'var(--muted)'}">Band ${b}</span>
+      <div class="band-bar-wrap"><div class="band-bar-fill" style="width:${Math.round(count/maxCount*100)}%;background:${colour}"></div></div>
+      <span class="band-count">${count}</span>
+      <span class="band-pct">${pct}%</span>
+    </div>`);
+  }
+  if (bandCounts['n/a']) {
+    rows.push(`<div class="band-row">
+      <span class="band-label" style="color:var(--muted)">No data</span>
+      <div class="band-bar-wrap"><div class="band-bar-fill" style="width:${Math.round(bandCounts['n/a']/maxCount*100)}%;background:var(--border)"></div></div>
+      <span class="band-count">${bandCounts['n/a']}</span>
+      <span class="band-pct">${Math.round(bandCounts['n/a']/total*100)}%</span>
+    </div>`);
+  }
+  document.getElementById('reportBands').innerHTML = rows.join('');
+  document.getElementById('customerReport').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function updateOverlayBadge() {
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
+  const badge = document.getElementById('overlayBadge');
+  badge.style.display = 'block';
+  badge.textContent = `${inHNW} of ${overlayResults.length} customers in HNW areas`;
+}
+
+function clearOverlay() {
+  if (customerLayer) { map.removeLayer(customerLayer); customerLayer = null; }
+  if (gapLayer) { map.removeLayer(gapLayer); gapLayer = null; }
+  showGaps = false;
+  document.getElementById('btnShowGaps').classList.remove('active');
+  overlayResults = [];
+  document.getElementById('pasteArea').value = '';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileName').textContent = '';
+  document.getElementById('uploadLabel').classList.remove('has-file');
+  document.getElementById('btnOverlay').style.display = 'none';
+  document.getElementById('clearOverlayBtn').style.display = 'none';
+  document.getElementById('overlayBadge').style.display = 'none';
+  document.getElementById('customerReport').style.display = 'none';
+  setMapMode('hnw');
+}
+
+// ── Brief ─────────────────────────────────────────────────────────────────
+function generateHNWBrief() {
+  let branding = {};
+  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
+  const agencyName = branding.name    || 'Pratt Digital';
+  const primary    = branding.primary || '#d4a017';
+  const secondary  = branding.secondary || '#8B6914';
+  const logoSrc    = branding.logo    || '';
+
+  function darken(hex, pct) {
+    const n=parseInt(hex.slice(1),16),f=1-pct/100;
+    return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.max(0,Math.round(v*f)).toString(16).padStart(2,'0')).join('');
+  }
+  function lighten(hex, pct) {
+    const n=parseInt(hex.slice(1),16),f=pct/100;
+    return '#'+[((n>>16)&0xff),((n>>8)&0xff),(n&0xff)].map(v=>Math.min(255,Math.round(v+(255-v)*f)).toString(16).padStart(2,'0')).join('');
+  }
+
+  const primaryDark  = darken(primary, 20);
+  const primaryLight = lighten(primary, 88);
+  const today = new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'});
+
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const allHNW = getFilteredDistricts().sort((a,b) => b[1].hnw - a[1].hnw);
+  const totalDistricts = allHNW.length;
+  const totalSectors = allHNW.reduce((s, [d]) => {
+    let n = 0;
+    for (let i = 0; i <= 9; i++) { if (typeof VALID_SECTORS === 'undefined' || VALID_SECTORS.has(`${d} ${i}`)) n++; }
+    return s + n;
+  }, 0);
+
+  // Top districts by band
+  const top12 = allHNW.slice(0, 12);
+
+  // Customer breakdown
+  const hasCustomers = overlayResults.length > 0;
+  const customerDistricts = new Set(overlayResults.map(r => r.district));
+  const gapDistricts = hasCustomers ? allHNW.filter(([d]) => !customerDistricts.has(d)) : [];
+  const totalCustomers = overlayResults.length;
+  const inHNW = overlayResults.filter(r => r.hnwBand && r.hnwBand >= cutoff).length;
+  const bandCounts = {};
+  for (const r of overlayResults) { const b = r.hnwBand || 0; bandCounts[b] = (bandCounts[b]||0)+1; }
+
+  // Insights
+  const insights = [];
+  insights.push(`England has <strong>${Object.keys(HNW_DATA).length.toLocaleString()}</strong> scored postcode districts. At the current threshold, <strong>${totalDistricts.toLocaleString()}</strong> qualify as HNW (band ${cutoff}+), covering <strong>${totalSectors.toLocaleString()}</strong> postcode sectors.`);
+  if (top12.length >= 3) {
+    const top3 = top12.slice(0,3).map(([d,v]) => `${d} (band ${v.hnw})`).join(', ');
+    insights.push(`The highest-scoring districts are <strong>${top3}</strong>.`);
+  }
+  if (hasCustomers) {
+    const pct = Math.round(inHNW/totalCustomers*100);
+    insights.push(`Of <strong>${totalCustomers.toLocaleString()}</strong> customers analysed, <strong>${inHNW.toLocaleString()}</strong> (${pct}%) are located in HNW districts at the current threshold.`);
+    const topBand = Object.entries(bandCounts).filter(([b]) => b > 0).sort((a,b) => b[1]-a[1])[0];
+    if (topBand) insights.push(`The most common HNW band among customers is <strong>band ${topBand[0]}</strong> with ${topBand[1]} customers.`);
+    if (gapDistricts.length) insights.push(`<strong>${gapDistricts.length}</strong> HNW districts have no customers yet — these represent untapped high-value opportunities.`);
+  }
+
+  const briefHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HNW Area Analysis — ${agencyName}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--primary:${primary};--primary-dark:${primaryDark};--primary-light:${primaryLight};--secondary:${secondary};--slate:#4c565c;--muted:#6b6960;--border:#e2e0d8;--bg:#f5f4f0;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13px;line-height:1.6;}
+  @media print{body{font-size:11px;}.no-print{display:none!important;}.card{break-inside:avoid;}}
+  @page{margin:15mm;size:A4;}
+  .page{max-width:860px;margin:0 auto;padding:30px;}
+  .brief-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:4px solid var(--primary);margin-bottom:24px;}
+  .header-logo{max-height:44px;max-width:180px;object-fit:contain;}
+  .header-logo.placeholder{background:var(--primary);color:#fff;font-weight:700;font-size:14px;padding:8px 14px;border-radius:6px;}
+  .header-right{text-align:right;}
+  .brief-title{font-size:20px;font-weight:700;color:var(--slate);}
+  .brief-meta{font-size:11px;color:var(--muted);margin-top:3px;}
+  .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--primary-dark);margin:20px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+  .stat-card{background:var(--bg);border-radius:8px;padding:10px 12px;border-left:3px solid var(--primary);}
+  .stat-card h4{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;}
+  .stat-card .val{font-size:20px;font-weight:700;color:var(--slate);line-height:1;}
+  .stat-card .sub{font-size:10px;color:var(--muted);margin-top:3px;}
+  .insight-box{background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:12px 16px;margin-bottom:16px;}
+  .insight-item{font-size:12px;line-height:1.7;padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.06);}
+  .insight-item:last-child{border-bottom:none;}
+  .insight-item::before{content:'→ ';color:var(--primary-dark);font-weight:700;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px;}
+  .bar-label{min-width:70px;color:var(--muted);font-size:10px;font-family:monospace;}
+  .bar-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:3px;}
+  .bar-val{min-width:30px;text-align:right;font-size:10px;font-weight:600;}
+  .dist-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+  .dist-item{background:var(--bg);border-radius:6px;padding:7px 9px;border-left:2px solid var(--primary);text-align:center;}
+  .dist-item .code{font-family:monospace;font-size:13px;font-weight:700;}
+  .dist-item .cnt{font-size:10px;color:var(--muted);margin-top:2px;}
+  .brief-footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted);}
+  .print-bar{position:fixed;bottom:20px;right:20px;display:flex;gap:8px;z-index:100;}
+  .print-btn{padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;}
+  .print-btn.primary{background:var(--primary);color:#fff;}
+  .print-btn.secondary{background:#fff;color:var(--slate);border:1px solid var(--border);}
+  .hnw-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:var(--primary-light);color:var(--primary-dark);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brief-header">
+    ${logoSrc ? `<img class="header-logo" src="${logoSrc}" alt="${agencyName}">` : `<div class="header-logo placeholder">${agencyName}</div>`}
+    <div class="header-right">
+      <div class="brief-title">HNW Area Analysis</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite</div>
+    </div>
+  </div>
+
+  <div class="section-title">Overview</div>
+  <div class="stat-grid">
+    <div class="stat-card"><h4>HNW threshold</h4><div class="val">Top ${currentThreshold}%</div><div class="sub">Band ${cutoff}+ of 10</div></div>
+    <div class="stat-card"><h4>HNW districts</h4><div class="val">${totalDistricts.toLocaleString()}</div><div class="sub">Qualifying areas</div></div>
+    <div class="stat-card"><h4>HNW sectors</h4><div class="val">${totalSectors.toLocaleString()}</div><div class="sub">Targetable sectors</div></div>
+    ${hasCustomers ? `<div class="stat-card"><h4>Customers in HNW</h4><div class="val">${Math.round(inHNW/totalCustomers*100)}%</div><div class="sub">${inHNW.toLocaleString()} of ${totalCustomers.toLocaleString()}</div></div>` : `<div class="stat-card"><h4>Data source</h4><div class="val" style="font-size:13px">ONS IMD</div><div class="sub">Income deprivation 2019</div></div>`}
+  </div>
+
+  <div class="section-title">Key observations</div>
+  <div class="insight-box">
+    ${insights.map(i => `<div class="insight-item">${i}</div>`).join('')}
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="section-title">Top HNW districts</div>
+      ${top12.map(([d, v]) => `
+        <div class="bar-row">
+          <span class="bar-label">${d}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(v.hnw/10*100)}%;background:${hnwColour(v.hnw)}"></div></div>
+          <span class="bar-val">Band ${v.hnw}</span>
+        </div>`).join('')}
+    </div>
+    ${hasCustomers ? `
+    <div>
+      <div class="section-title">Customer breakdown by HNW band</div>
+      ${[10,9,8,7,6,5,4,3,2,1].filter(b => bandCounts[b]).map(b => `
+        <div class="bar-row">
+          <span class="bar-label">Band ${b}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(bandCounts[b]/totalCustomers*100)}%;background:${hnwColour(b)}"></div></div>
+          <span class="bar-val">${bandCounts[b]} (${Math.round(bandCounts[b]/totalCustomers*100)}%)</span>
+        </div>`).join('')}
+      ${bandCounts[0] ? `<div class="bar-row"><span class="bar-label" style="color:var(--muted)">No data</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(bandCounts[0]/totalCustomers*100)}%;background:var(--border)"></div></div><span class="bar-val">${bandCounts[0]}</span></div>` : ''}
+    </div>` : `
+    <div>
+      <div class="section-title">All qualifying districts</div>
+      <div class="dist-grid">
+        ${allHNW.slice(0,20).map(([d,v]) => `<div class="dist-item"><div class="code">${d}</div><div class="cnt"><span class="hnw-badge">Band ${v.hnw}</span></div></div>`).join('')}
+      </div>
+    </div>`}
+  </div>
+
+  ${hasCustomers ? (() => {
+    // Group by district
+    const byDistrict = {};
+    for (const r of overlayResults) {
+      if (!byDistrict[r.district]) byDistrict[r.district] = { count: 0, hnwBand: r.hnwBand, inHNW: r.hnwBand && r.hnwBand >= cutoff };
+      byDistrict[r.district].count++;
+    }
+    const inRows = Object.entries(byDistrict).filter(([,v])=>v.inHNW).sort((a,b)=>b[1].hnwBand-a[1].hnwBand||b[1].count-a[1].count).slice(0,15);
+    const outRows = Object.entries(byDistrict).filter(([,v])=>!v.inHNW).sort((a,b)=>(b[1].hnwBand||0)-(a[1].hnwBand||0)||b[1].count-a[1].count).slice(0,15);
+    const row = (d,v,badge) => `<tr><td style="padding:3px 6px;font-family:monospace;font-weight:600">${d}</td><td style="padding:3px 6px;text-align:center"><strong>${v.count}</strong></td><td style="padding:3px 6px;text-align:right">${badge}</td></tr>`;
+    const th = (t) => `<th style="text-align:${t==='Customers'?'center':'left'};padding:4px 6px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600">${t}</th>`;
+    return `
+  <div class="two-col" style="margin-top:20px">
+    <div>
+      <div class="section-title">Top districts — customers in HNW</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr>${th('District')}${th('Customers')}${th('HNW Band')}</tr></thead>
+        <tbody>${inRows.map(([d,v])=>row(d,v,`<span class="hnw-badge">${v.hnwBand}/10</span>`)).join('')}</tbody>
+      </table>
+    </div>
+    <div>
+      <div class="section-title">Top districts — customers outside HNW</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead><tr>${th('District')}${th('Customers')}${th('HNW Band')}</tr></thead>
+        <tbody>${outRows.map(([d,v])=>row(d,v,`<span style="color:var(--muted);font-size:10px">${v.hnwBand?`Band ${v.hnwBand}`:'No data'}</span>`)).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+  })() : ''}
+
+  ${hasCustomers && gapDistricts.length ? `
+  <div style="margin-top:20px">
+    <div class="section-title">HNW opportunity gaps — districts with no customers yet (top ${Math.min(gapDistricts.length, 20)} of ${gapDistricts.length})</div>
+    <div class="dist-grid">
+      ${gapDistricts.slice(0,20).map(([d,v]) => `<div class="dist-item"><div class="code">${d}</div><div class="cnt"><span class="hnw-badge">Band ${v.hnw}</span></div></div>`).join('')}
+    </div>
+  </div>` : ''}
+
+  <div class="brief-footer">
+    <span>${agencyName} · Geo Intelligence Suite · HNW scores based on ONS Income Deprivation 2019</span>
+    <span>Generated ${today} · Confidential</span>
+  </div>
+</div>
+<div class="print-bar no-print">
+  <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
+  <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportXLSX() {
+  const cutoff = Math.ceil(10 * (1 - currentThreshold / 100));
+  const filtered = Object.entries(HNW_DATA)
+    .filter(([, d]) => d.hnw >= cutoff)
+    .sort((a, b) => b[1].hnw - a[1].hnw);
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Districts
+  const distRows = [['District', 'HNW Band (1-10)', 'Lat', 'Lng']];
+  filtered.forEach(([district, d]) => distRows.push([district, d.hnw, d.lat, d.lng]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(distRows), 'Districts');
+
+  // Sheet 2: Sectors (only real validated sectors)
+  const secRows = [['Sector', 'HNW Band (1-10)', 'District']];
+  filtered.forEach(([district, d]) => {
+    for (let i = 0; i <= 9; i++) {
+      const sector = `${district} ${i}`;
+      if (typeof VALID_SECTORS === 'undefined' || !VALID_SECTORS.has(sector)) continue;
+      secRows.push([sector, d.hnw, district]);
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(secRows), 'Sectors');
+
+  // Sheet 3: HNW gaps — HNW districts with no customers (if overlay loaded)
+  if (overlayResults.length) {
+    const customerDistricts = new Set(overlayResults.map(r => r.district));
+    const gapRows = [['District', 'HNW Band (1-10)', 'Lat', 'Lng']];
+    filtered.filter(([d]) => !customerDistricts.has(d))
+      .forEach(([district, d]) => gapRows.push([district, d.hnw, d.lat, d.lng]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(gapRows), 'HNW Gaps');
+  }
+
+  // Sheet 4: Customer postcodes (if overlaid)
+  if (overlayResults.length) {
+    const pcRows = [['Postcode', 'District', 'HNW Band (1-10)', 'In HNW Area', 'Lat', 'Lng']];
+    overlayResults.forEach(r => {
+      const inHNW = r.hnwBand && r.hnwBand >= cutoff;
+      pcRows.push([r.postcode, r.district, r.hnwBand || '—', inHNW ? 'Yes' : 'No', r.lat, r.lng]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pcRows), 'Your Customers');
+  }
+
+  XLSX.writeFile(wb, `hnw_areas_top${currentThreshold}pct.xlsx`);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+if (typeof HNW_DATA === 'undefined') {
+  document.getElementById('statusMsg').textContent = 'HNW data file not loaded. Make sure hnw_data.js is in the same folder.';
+  document.getElementById('statusMsg').className = 'status-msg error';
+} else {
+  drawHNWLayer();
+  document.getElementById('statusMsg').textContent = `HNW data loaded for ${Object.keys(HNW_DATA).length} districts. Adjust the slider to refine your target areas.`;
+  document.getElementById('statusMsg').className = 'status-msg success';
+}
+
+</script>
+</body>
+</html>
