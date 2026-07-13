@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Profile &amp; Lookalike Finder — Pratt Digital</title>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Leaflet map library -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <!-- App styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <img class="header-logo" src="logo.jpg" alt="Pratt Digital">
+  <div class="header-divider"></div>
+  <h1>Customer Profile &amp; Lookalike Finder</h1>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="section-label">Your customer postcodes</div>
+    <label class="upload-label" id="uploadLabel">
+      <input type="file" id="fileInput" accept=".csv,.txt">
+      📂 <strong>Upload CSV</strong> or drag &amp; drop
+      <div id="fileName" style="font-size:11px;font-weight:500;margin-top:3px;color:var(--c1)"></div>
+    </label>
+    <textarea id="pasteArea" placeholder="Paste postcodes here&#10;SW1A 2AA&#10;M1 1AE&#10;B1 1BB&#10;&#10;One per row. Headers optional."></textarea>
+    <div class="format-hint">One postcode per row. CSV columns OK — postcode auto-detected.</div>
+    <button class="btn-sample" onclick="loadSample()">↗ Load sample dataset</button>
+
+    <button class="btn btn-primary" id="analyseBtn" onclick="runAnalysis()" disabled>Build profile</button>
+    <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Starting…</div>
+    </div>
+
+    <div id="statusMsg" class="status-msg">Load customer postcodes to build a demographic profile and find lookalike areas.</div>
+
+    <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border);">
+      <div class="format-hint" style="line-height:1.7">
+        <strong>Data sources</strong><br>
+        IMD 2019 (ONS) — deprivation deciles<br>
+        Land Registry HPI — house price bands<br>
+        ONS rural/urban classification<br>
+        ONS regional geography
+      </div>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <div class="placeholder">
+      <div class="icon">📊</div>
+      <p><strong>Paste your customer postcodes on the left</strong><br>
+      The tool will profile your existing customer base by deprivation, house prices, urban/rural split and region — then find other areas of England with matching characteristics where you have no customers yet.</p>
+    </div>
+  </div>
+</div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Valid districts whitelist (loaded before data.js) -->
+  <script src="valid_districts.js"></script>
+  <!-- Valid sectors whitelist -->
+  <script src="valid_sectors.js"></script>
+  <!-- HNW income band data -->
+  <script src="hnw_data.js"></script>
+  <!-- District data (loaded first so app.js can reference DISTRICT_DATA) -->
+  <script src="data.js"></script>
+  <!-- App logic -->
+  <script src="app.js"></script>
+</body>
+</html>
