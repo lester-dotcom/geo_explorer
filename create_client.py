@@ -3,7 +3,7 @@
 create_client.py — Create a client-specific version of the Geo Intelligence Suite.
 
 Duplicates all tools to  clients/<slug>/  with localStorage persistence:
-  - Postcodes uploaded in any tool are saved in the browser
+  - Postcodes uploaded in any tool (or the launcher) are saved in the browser
   - They reload automatically on every visit (no re-upload needed)
   - The client can re-upload at any time to update the data
   - Original tools at /geo_explorer/ are untouched
@@ -35,7 +35,6 @@ def fix_asset_paths(html):
     shared = {
         'hnw_data.js', 'dwelling_data.js', 'valid_sectors.js', 'valid_districts.js',
     }
-    # tool links in index.html
     tool_html = {
         'brand-map.html', 'customer-map.html', 'dwelling-explorer.html',
         'hnw-finder.html', 'local-coverage.html', 'overlap-map.html',
@@ -61,7 +60,6 @@ def pin_gate_script(pin, slug):
     Returns a <script> block that locks the page behind a PIN.
     - PIN is hashed (SHA-256) in the browser — plain PIN never stored anywhere.
     - Unlock persists in sessionStorage for the tab lifetime.
-    - Overlay is injected before <body> content renders.
     """
     session_key = f'geo_pd_{slug}_auth'
     return f"""
@@ -69,7 +67,6 @@ def pin_gate_script(pin, slug):
 /* ── Pratt Digital PIN gate ── */
 (function() {{
   var SESSION_KEY = '{session_key}';
-  var HASH = '{pin}'; // replaced with SHA-256 hex at runtime check
 
   async function sha256(str) {{
     var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -79,9 +76,8 @@ def pin_gate_script(pin, slug):
   var correctHash = null;
   sha256('{pin}').then(function(h) {{ correctHash = h; }});
 
-  if (sessionStorage.getItem(SESSION_KEY) === '1') return; // already unlocked this tab
+  if (sessionStorage.getItem(SESSION_KEY) === '1') return;
 
-  // Build overlay
   var overlay = document.createElement('div');
   overlay.id = 'pd-pin-overlay';
   overlay.style.cssText = [
@@ -141,11 +137,10 @@ def pin_gate_script(pin, slug):
 def storage_head_script(slug, ns='customers'):
     """
     Shared localStorage helpers for named dataset management.
-    Supports multiple named datasets per tool with a selector UI.
-    ns = namespace suffix, e.g. 'customers' or 'locations'
+    Supports multiple named datasets per namespace with a selector UI.
     """
-    ds_key    = f'geo_pd_{slug}_{ns}_datasets'
-    act_key   = f'geo_pd_{slug}_{ns}_active'
+    ds_key  = f'geo_pd_{slug}_{ns}_datasets'
+    act_key = f'geo_pd_{slug}_{ns}_active'
     return f"""
 <script>
 /* ── Pratt Digital multi-dataset storage: {ns} ── */
@@ -153,7 +148,7 @@ def storage_head_script(slug, ns='customers'):
   var DS_KEY  = '{ds_key}';
   var ACT_KEY = '{act_key}';
 
-  function _all()  {{ try {{ return JSON.parse(localStorage.getItem(DS_KEY)||'{{}}'); }} catch(e) {{ return {{}}; }} }}
+  function _all()   {{ try {{ return JSON.parse(localStorage.getItem(DS_KEY)||'{{}}'); }} catch(e) {{ return {{}}; }} }}
   function _save(o) {{ try {{ localStorage.setItem(DS_KEY, JSON.stringify(o)); }} catch(e) {{}} }}
 
   window.pdSave_{ns} = function(data, name) {{
@@ -171,7 +166,7 @@ def storage_head_script(slug, ns='customers'):
     return Object.assign({{ name: name }}, all[name]);
   }};
   window.pdAllDatasets_{ns} = function() {{ return _all(); }};
-  window.pdSetActive_{ns} = function(name) {{ localStorage.setItem(ACT_KEY, name); }};
+  window.pdSetActive_{ns}   = function(name) {{ localStorage.setItem(ACT_KEY, name); }};
   window.pdDeleteDataset_{ns} = function(name) {{
     var all = _all(); delete all[name]; _save(all);
     var keys = Object.keys(all);
@@ -180,6 +175,10 @@ def storage_head_script(slug, ns='customers'):
   window.pdClear_{ns} = function() {{
     localStorage.removeItem(DS_KEY);
     localStorage.removeItem(ACT_KEY);
+  }};
+  window.pdRawGet_{ns} = function(name) {{
+    var all = _all();
+    return all[name] || null;
   }};
 }})();
 </script>"""
@@ -200,9 +199,15 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
     """
     Returns JS that:
     1. On DOMContentLoaded: if saved datasets exist, replaces the upload label
-       with a dropdown picker + active dataset badge.
-    2. Wraps the parse function to prompt for a dataset name on upload, then save.
-    3. Allows switching between saved datasets via dropdown.
+       with a dropdown picker.
+    2. pdTriggerParse_{ns}(text, name) calls the original parse fn then saves.
+    3. pdUseSelected_{ns}() loads the selected dataset into the tool.
+
+    BUG FIXES vs prior version:
+    - renderPicker now finds the element by label_id OR by the picker div itself,
+      so re-renders after the first upload work correctly.
+    - window.pdRenderPicker_{ns} is set at IIFE scope so it's always available,
+      even on first upload when renderPicker hasn't been called yet at load time.
     """
     return f"""
 /* ─── PD dataset picker: {ns} ─── */
@@ -216,7 +221,8 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
   function renderPicker(ns_active) {{
     var all = pdAllDatasets_{ns}();
     var names = Object.keys(all);
-    var lbl = document.getElementById('{label_id}');
+    // Find the element to replace: either the original label or the existing picker div
+    var lbl = document.getElementById('{label_id}') || document.getElementById('pd-picker-{ns}');
     if (!lbl) return;
 
     var sel = '<select id="pd-sel-{ns}" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
@@ -225,8 +231,6 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
            + n + ' (' + all[n].count + ')</option>';
     }});
     sel += '</select>';
-
-    window.pdRenderPicker_{ns} = renderPicker;  // expose for external callers
 
     lbl.outerHTML =
       '<div id="pd-picker-{ns}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;font-size:12px;">'
@@ -251,11 +255,13 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
       r.readAsText(f);
     }});
 
-    // Show active badge below picker
     if (ns_active && all[ns_active]) {{
       updateActiveBadge_{ns}(ns_active, all[ns_active]);
     }}
   }}
+
+  // Expose globally at IIFE scope so it's always set, even before first call
+  window.pdRenderPicker_{ns} = renderPicker;
 
   function updateActiveBadge_{ns}(name, info) {{
     var existing = document.getElementById('pd-active-{ns}');
@@ -299,10 +305,8 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
   }};
 
   window.pdTriggerParse_{ns} = function(text, name) {{
-    // Parse the raw CSV text using the tool's existing parse function
     if (typeof _pdOrigParse_{ns} === 'function') {{
       _pdOrigParse_{ns}(text);
-      // After parse, data_var is populated — save it
       setTimeout(function() {{
         var data = (typeof {data_var} !== 'undefined') ? {data_var} : [];
         if (data.length) {{
@@ -311,11 +315,11 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
           updateActiveBadge_{ns}(name, pdAllDatasets_{ns}()[name]);
           {on_save_extra}
         }}
-      }}, 100);
+      }}, 150);
     }}
   }};
 
-  window._pdOrigParse_{ns} = null; // set below after tool's function is defined
+  window._pdOrigParse_{ns} = null;
 
   document.addEventListener('DOMContentLoaded', function() {{
     var all = pdAllDatasets_{ns}();
@@ -337,7 +341,7 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
 
 def _standard_patcher(html, slug, parse_fn, data_var='customerData',
                        ns='customers', color='#16a34a', on_load_extra='', on_save_extra=''):
-    """Common patcher for tools that use a named parse function + customerData array."""
+    """Common patcher for tools that use a named parse function + data array."""
     html = html.replace('</head>', storage_head_script(slug, ns) + '\n</head>', 1)
     picker = dataset_picker_js(ns=ns, color=color, label_id='uploadLabel',
                                 data_var=data_var, on_load_extra=on_load_extra,
@@ -346,12 +350,11 @@ def _standard_patcher(html, slug, parse_fn, data_var='customerData',
 <script>
 {picker}
 document.addEventListener('DOMContentLoaded', function() {{
-  // Wire up the tool's parse function to the dataset picker
   if (typeof {parse_fn} === 'function') {{
     _pdOrigParse_{ns} = {parse_fn};
     {parse_fn} = function(text) {{
       _pdOrigParse_{ns}(text);
-      // If the picker UI isn't shown yet (no saved datasets), save this upload
+      // If picker isn't shown yet (first upload), save and render
       if (!document.getElementById('pd-picker-{ns}')) {{
         setTimeout(function() {{
           var data = (typeof {data_var} !== 'undefined') ? {data_var} : [];
@@ -401,55 +404,79 @@ def patch_hnw_finder(html, slug):
     """HNW finder: uploads go into pasteArea textarea, not parsed to an array."""
     html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
+    # on_load_extra runs inside pdUseSelected_customers where `name` and `all` are in scope
+    # (NOT inside DOMContentLoaded, so `active` is NOT available — use all[name] instead)
+    on_load_extra = (
+        'var _pa=document.getElementById("pasteArea");'
+        'var _entry=all[name];'
+        'if(_pa&&_entry&&_entry.rawText){'
+        '_pa.value=_entry.rawText;'
+        '_pa.dispatchEvent(new Event("input"));'
+        '}'
+        'if(typeof checkReady==="function") checkReady();'
+    )
+
     picker = dataset_picker_js(
         ns='customers', color='#7c3aed', label_id='uploadLabel',
         data_var='customerData',
-        on_load_extra=(
-            'var pa=document.getElementById("pasteArea");'
-            'if(pa&&active&&active.rawText){pa.value=active.rawText;}'
-            'if(typeof checkReady==="function") checkReady();'
-        )
+        on_load_extra=on_load_extra
     )
+
+    ds_key = f'geo_pd_{slug}_customers_datasets'
+
     body_script = f"""
 <script>
 {picker}
 
 // HNW uses textarea — override pdTriggerParse_customers for text passthrough
 window.pdTriggerParse_customers = function(text, name) {{
-  var all = pdAllDatasets_customers();
-  // Count lines as postcodes
+  // Count lines as proxy for record count
   var lines = text.trim().split('\\n').filter(function(l){{return l.trim();}});
-  var fakeData = lines; // store raw lines as "data" for count purposes
-  pdSave_customers(fakeData, name);
-  // Also store raw text alongside
+  pdSave_customers(lines, name);
+  // Persist raw text alongside the record array
   try {{
-    var stored = JSON.parse(localStorage.getItem('geo_pd_{slug}_customers_datasets')||'{{}}');
-    if (stored[name]) {{ stored[name].rawText = text; localStorage.setItem('geo_pd_{slug}_customers_datasets', JSON.stringify(stored)); }}
+    var stored = JSON.parse(localStorage.getItem('{ds_key}')||'{{}}');
+    if (stored[name]) {{
+      stored[name].rawText = text;
+      localStorage.setItem('{ds_key}', JSON.stringify(stored));
+    }}
   }} catch(e) {{}}
-  // Fill the pasteArea
+  // Fill pasteArea so the tool can plot immediately
   var pa = document.getElementById('pasteArea');
-  if (pa) {{ pa.value = text; if(typeof checkReady==='function') checkReady(); }}
-  // Re-render picker
-  var all2 = pdAllDatasets_customers();
-  setTimeout(function() {{
-    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
-    location.reload(); // simplest — picker will restore on reload
-  }}, 200);
+  if (pa) {{
+    pa.value = text;
+    pa.dispatchEvent(new Event('input'));
+    if (typeof checkReady === 'function') checkReady();
+  }}
+  // Re-render picker with the new dataset
+  if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+  var all = pdAllDatasets_customers();
+  if (all[name]) {{
+    var existing = document.getElementById('pd-active-customers');
+    var info = all[name];
+    var badge = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records</div>';
+    if (existing) existing.outerHTML = badge;
+    else {{
+      var picker = document.getElementById('pd-picker-customers');
+      if (picker) picker.insertAdjacentHTML('afterend', badge);
+    }}
+  }}
 }};
 
 document.addEventListener('DOMContentLoaded', function() {{
+  // Restore raw text from active dataset into pasteArea on page load
   var active = pdLoad_customers();
   if (active) {{
-    // Restore raw text into pasteArea
     try {{
-      var stored = JSON.parse(localStorage.getItem('geo_pd_{slug}_customers_datasets')||'{{}}');
+      var stored = JSON.parse(localStorage.getItem('{ds_key}')||'{{}}');
       var entry = stored[active.name];
       if (entry && entry.rawText) {{
         var pa = document.getElementById('pasteArea');
         if (pa) {{
           pa.value = entry.rawText;
-          pa.dispatchEvent(new Event('input')); // triggers checkReady in tool
-          if(typeof checkReady==='function') checkReady();
+          pa.dispatchEvent(new Event('input'));
+          if (typeof checkReady === 'function') checkReady();
         }}
       }}
     }} catch(e) {{}}
@@ -460,15 +487,21 @@ document.addEventListener('DOMContentLoaded', function() {{
 
 
 def patch_overlap_map(html, slug):
+    """Overlap map: two namespaces (customers = cData, locations = lData)."""
     html = html.replace('</head>',
         storage_head_script(slug, 'customers') + storage_head_script(slug, 'locations') + '\n</head>', 1)
 
-    picker_c = dataset_picker_js(ns='customers', color='#4f46e5', label_id='ul-c',
+    # on_load_extra runs inside pdUseSelected where `name` and `all` are in scope
+    picker_c = dataset_picker_js(
+        ns='customers', color='#4f46e5', label_id='ul-c',
         data_var='cData',
-        on_load_extra='if(typeof checkReady==="function") checkReady();')
-    picker_l = dataset_picker_js(ns='locations', color='#d97706', label_id='ul-l',
+        on_load_extra='if(typeof checkReady==="function") checkReady();'
+    )
+    picker_l = dataset_picker_js(
+        ns='locations', color='#d97706', label_id='ul-l',
         data_var='lData',
-        on_load_extra='if(typeof checkReady==="function") checkReady();')
+        on_load_extra='if(typeof checkReady==="function") checkReady();'
+    )
 
     body_script = f"""
 <script>
@@ -482,12 +515,23 @@ document.addEventListener('DOMContentLoaded', function() {{
       _pdOrigParse_customers(text, ds);
       setTimeout(function() {{
         if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {{
-          pdSave_customers(cData, 'Customers');
+          // Use the actual filename from the fi-c file input
+          var fi = document.getElementById('fi-c');
+          var name = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          pdSave_customers(cData, name);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+          if (typeof checkReady === 'function') checkReady();
         }}
         if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {{
-          pdSave_locations(lData, 'Locations');
+          var fi2 = document.getElementById('fi-l');
+          var name2 = (fi2 && fi2.files && fi2.files[0])
+            ? fi2.files[0].name.replace(/[.][^.]+$/, '') : 'Locations';
+          pdSave_locations(lData, name2);
+          if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(name2);
+          if (typeof checkReady === 'function') checkReady();
         }}
-      }}, 100);
+      }}, 150);
     }};
   }}
 }});
@@ -495,10 +539,176 @@ document.addEventListener('DOMContentLoaded', function() {{
     return inject_before_body_end(html, body_script)
 
 
+# ── Launcher data manager ──────────────────────────────────────────────────────
+
+def patch_launcher(html, slug):
+    """
+    Injects a 'Your Data' management card into the launcher index.html.
+    Users upload CSV files here; datasets are saved to localStorage and
+    immediately available in every tool without re-uploading.
+    """
+    ds_key_c  = f'geo_pd_{slug}_customers_datasets'
+    act_key_c = f'geo_pd_{slug}_customers_active'
+
+    launcher_script = f"""
+<script>
+/* ── Pratt Digital Launcher Data Manager ── */
+(function() {{
+  var DS_KEY  = '{ds_key_c}';
+  var ACT_KEY = '{act_key_c}';
+
+  function _all()   {{ try {{ return JSON.parse(localStorage.getItem(DS_KEY)||'{{}}'); }} catch(e) {{ return {{}}; }} }}
+  function _save(o) {{ try {{ localStorage.setItem(DS_KEY, JSON.stringify(o)); }} catch(e) {{}} }}
+
+  function fmtDate(s) {{
+    try {{ return new Date(s).toLocaleDateString('en-GB',{{day:'numeric',month:'short',year:'numeric'}}); }}
+    catch(e) {{ return ''; }}
+  }}
+
+  // Extract UK postcodes from raw CSV/text
+  function extractPostcodes(text) {{
+    var re = /[A-Z]{{1,2}}[0-9][0-9A-Z]?\\s*[0-9][A-Z]{{2}}/gi;
+    var seen = {{}};
+    var results = [];
+    var m;
+    // Also try extracting anything postcode-like from each field
+    text.replace(/\\r/g,'').split('\\n').forEach(function(line) {{
+      // Try full UK postcode matches
+      while ((m = re.exec(line)) !== null) {{
+        var pc = m[0].replace(/\\s+/g,' ').trim().toUpperCase();
+        if (!seen[pc]) {{ seen[pc] = 1; results.push(pc); }}
+      }}
+      re.lastIndex = 0;
+    }});
+    return results;
+  }}
+
+  function renderManager() {{
+    var all = _all();
+    var names = Object.keys(all);
+    var active = localStorage.getItem(ACT_KEY) || (names[0] || '');
+    var mgr = document.getElementById('pd-data-manager');
+    if (!mgr) return;
+
+    var listHtml = '';
+    if (names.length === 0) {{
+      listHtml = '<p style="color:#6b7280;font-size:13px;margin:0 0 12px">No datasets saved yet. Upload a file below.</p>';
+    }} else {{
+      listHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px">'
+        + '<thead><tr style="border-bottom:1px solid #e5e7eb">'
+        + '<th style="text-align:left;padding:4px 8px;color:#6b7280;font-weight:500">Name</th>'
+        + '<th style="text-align:right;padding:4px 8px;color:#6b7280;font-weight:500">Records</th>'
+        + '<th style="text-align:right;padding:4px 8px;color:#6b7280;font-weight:500">Saved</th>'
+        + '<th style="padding:4px 8px"></th>'
+        + '</tr></thead><tbody>';
+      names.forEach(function(n) {{
+        var info = all[n];
+        var isActive = (n === active);
+        listHtml += '<tr style="border-bottom:1px solid #f3f4f6' + (isActive?' background:#f0fdf4':'') + '">'
+          + '<td style="padding:6px 8px;font-weight:' + (isActive?'600':'400') + ';color:#1f2937">'
+          + (isActive ? '&#10003; ' : '') + n.replace(/</g,'&lt;') + '</td>'
+          + '<td style="padding:6px 8px;text-align:right;color:#374151">' + (info.count||0).toLocaleString() + '</td>'
+          + '<td style="padding:6px 8px;text-align:right;color:#6b7280">' + fmtDate(info.savedAt) + '</td>'
+          + '<td style="padding:6px 8px;text-align:right">'
+          + '<button onclick="pdLauncherDelete(' + JSON.stringify(n) + ')" style="font-size:11px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 6px">Delete</button>'
+          + '</td></tr>';
+      }});
+      listHtml += '</tbody></table>';
+    }}
+
+    mgr.innerHTML = listHtml
+      + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:160px">'
+      + '<label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Dataset name</label>'
+      + '<input id="pd-new-name" type="text" placeholder="e.g. Online Customers" '
+      + 'style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">'
+      + '</div>'
+      + '<div style="flex:1;min-width:160px">'
+      + '<label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">CSV / TXT file</label>'
+      + '<input id="pd-new-file" type="file" accept=".csv,.txt" '
+      + 'style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff">'
+      + '</div>'
+      + '<button onclick="pdLauncherUpload()" style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Save Dataset</button>'
+      + '</div>'
+      + '<p id="pd-upload-status" style="font-size:12px;color:#6b7280;margin:8px 0 0"></p>';
+  }}
+
+  window.pdLauncherUpload = function() {{
+    var fi = document.getElementById('pd-new-file');
+    var ni = document.getElementById('pd-new-name');
+    var st = document.getElementById('pd-upload-status');
+    if (!fi || !fi.files[0]) {{ if (st) st.textContent = 'Please choose a file.'; return; }}
+    var rawName = fi.files[0].name.replace(/[.][^.]+$/, '');
+    var name = (ni && ni.value.trim()) ? ni.value.trim() : rawName || 'Dataset';
+    if (st) st.textContent = 'Reading file...';
+    var r = new FileReader();
+    r.onload = function(e) {{
+      var postcodes = extractPostcodes(e.target.result);
+      if (!postcodes.length) {{
+        if (st) st.textContent = 'No UK postcodes found in file. Please check the format.';
+        return;
+      }}
+      var all = _all();
+      all[name] = {{ data: postcodes, count: postcodes.length, savedAt: new Date().toISOString() }};
+      _save(all);
+      localStorage.setItem(ACT_KEY, name);
+      if (st) st.textContent = 'Saved "' + name + '" (' + postcodes.length.toLocaleString() + ' postcodes).';
+      if (ni) ni.value = '';
+      if (fi) fi.value = '';
+      renderManager();
+    }};
+    r.readAsText(fi.files[0]);
+  }};
+
+  window.pdLauncherDelete = function(name) {{
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    var all = _all();
+    delete all[name];
+    _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
+    renderManager();
+  }};
+
+  document.addEventListener('DOMContentLoaded', renderManager);
+}})();
+</script>"""
+
+    # Inject the data manager card HTML.
+    # We look for the tools grid and insert the data manager card before it.
+    # Fallback: insert just before </main> or </body>.
+    data_card = """
+<div style="background:#fff;border-radius:16px;padding:28px 32px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1.5px solid #e0e7ff;margin-bottom:28px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <div style="width:40px;height:40px;background:#eef2ff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">📁</div>
+    <div>
+      <h2 style="margin:0;font-size:16px;font-weight:700;color:#1e1b4b">Your Data</h2>
+      <p style="margin:0;font-size:13px;color:#6b7280">Upload customer files here — they load automatically in every tool</p>
+    </div>
+  </div>
+  <div id="pd-data-manager">Loading...</div>
+</div>"""
+
+    # Try to inject before the first tool card / grid
+    # Look for the main tools section landmark
+    for marker in ['<div class="tools-grid"', '<div class="grid"', '<section', '<main']:
+        idx = html.find(marker)
+        if idx != -1:
+            html = html[:idx] + data_card + '\n' + html[idx:]
+            break
+    else:
+        # Fallback: before </main> or </body>
+        html = inject_before_body_end(html, data_card)
+
+    return inject_before_body_end(html, launcher_script)
+
+
 # ── Tool registry ──────────────────────────────────────────────────────────────
 
 def get_patcher(filename, slug):
     name = os.path.basename(filename).lower()
+    if name == 'index.html':
+        return lambda h: patch_launcher(h, slug)
     if name == 'local-coverage.html':
         return lambda h: patch_local_coverage(h, slug)
     if name == 'dwelling-explorer.html':
@@ -557,7 +767,6 @@ def main():
     for fname in TOOL_FILES:
         src = os.path.join(script_dir, fname)
         if not os.path.exists(src):
-            # Try stripping parenthetical suffix (e.g. "profile-tool (1).html" → "profile-tool.html")
             alt_name = re.sub(r'\s*\(\d+\)', '', fname)
             alt = os.path.join(script_dir, alt_name)
             if os.path.exists(alt):
@@ -573,25 +782,21 @@ def main():
         with open(src, 'r', encoding='utf-8') as f:
             html = f.read()
 
-        # Fix asset paths
         html = fix_asset_paths(html)
 
-        # Update page title
         html = re.sub(
             r'(<title>[^<]*)(</title>)',
             rf'\g<1> · {args.client}\g<2>',
             html, count=1
         )
 
-        # Inject PIN gate (as first thing in <head>)
         if args.pin:
             html = html.replace('<head>', '<head>\n' + pin_gate_script(args.pin, slug), 1)
 
-        # Apply tool-specific persistence patches
         patcher = get_patcher(dst_name, slug)
         if patcher:
             html = patcher(html)
-            print(f"  ✓ Patched  : {dst_name}  (localStorage persistence added)")
+            print(f"  ✓ Patched  : {dst_name}")
         else:
             print(f"  ○ Copied   : {dst_name}")
 
@@ -606,7 +811,6 @@ def main():
         if os.path.exists(profile_dst):
             shutil.rmtree(profile_dst)
         shutil.copytree(profile_src, profile_dst)
-        # Patch profile-tool/index.html with dataset picker
         pt_index = os.path.join(profile_dst, 'index.html')
         if os.path.exists(pt_index):
             with open(pt_index, 'r', encoding='utf-8') as f:
@@ -616,7 +820,7 @@ def main():
             pt_html = patch_profile_tool_html(pt_html, slug)
             with open(pt_index, 'w', encoding='utf-8') as f:
                 f.write(pt_html)
-            print(f"  ✓ Patched  : profile-tool/index.html  (localStorage persistence added)")
+            print(f"  ✓ Patched  : profile-tool/index.html")
         else:
             print(f"  ○ Copied   : profile-tool/")
 
@@ -624,10 +828,10 @@ def main():
     print(f"\n── Next steps ──────────────────────────────────────────────")
     print(f"  cd to your geo_explorer repo folder, then:")
     print(f"    git add clients/{slug}")
-    print(f'    git commit -m "Add {args.client} client instance"')
+    print(f'    git commit -m "Update {args.client} client"')
     print(f"    git push origin main")
     print()
-    print(f"  Live URL (after push — allow 1-2 min for GitHub Pages):")
+    print(f"  Live URL (after push):")
     print(f"    https://lester-dotcom.github.io/geo_explorer/clients/{slug}/")
     print()
 

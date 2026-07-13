@@ -6,7 +6,6 @@
 /* ── Pratt Digital PIN gate ── */
 (function() {
   var SESSION_KEY = 'geo_pd_eleven-australia_auth';
-  var HASH = '6933'; // replaced with SHA-256 hex at runtime check
 
   async function sha256(str) {
     var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -16,9 +15,8 @@
   var correctHash = null;
   sha256('6933').then(function(h) { correctHash = h; });
 
-  if (sessionStorage.getItem(SESSION_KEY) === '1') return; // already unlocked this tab
+  if (sessionStorage.getItem(SESSION_KEY) === '1') return;
 
-  // Build overlay
   var overlay = document.createElement('div');
   overlay.id = 'pd-pin-overlay';
   overlay.style.cssText = [
@@ -165,7 +163,7 @@
   var DS_KEY  = 'geo_pd_eleven-australia_customers_datasets';
   var ACT_KEY = 'geo_pd_eleven-australia_customers_active';
 
-  function _all()  { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
   function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
 
   window.pdSave_customers = function(data, name) {
@@ -183,7 +181,7 @@
     return Object.assign({ name: name }, all[name]);
   };
   window.pdAllDatasets_customers = function() { return _all(); };
-  window.pdSetActive_customers = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdSetActive_customers   = function(name) { localStorage.setItem(ACT_KEY, name); };
   window.pdDeleteDataset_customers = function(name) {
     var all = _all(); delete all[name]; _save(all);
     var keys = Object.keys(all);
@@ -192,6 +190,10 @@
   window.pdClear_customers = function() {
     localStorage.removeItem(DS_KEY);
     localStorage.removeItem(ACT_KEY);
+  };
+  window.pdRawGet_customers = function(name) {
+    var all = _all();
+    return all[name] || null;
   };
 })();
 </script>
@@ -864,7 +866,8 @@ if (typeof HNW_DATA === 'undefined') {
   function renderPicker(ns_active) {
     var all = pdAllDatasets_customers();
     var names = Object.keys(all);
-    var lbl = document.getElementById('uploadLabel');
+    // Find the element to replace: either the original label or the existing picker div
+    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
     if (!lbl) return;
 
     var sel = '<select id="pd-sel-customers" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
@@ -873,8 +876,6 @@ if (typeof HNW_DATA === 'undefined') {
            + n + ' (' + all[n].count + ')</option>';
     });
     sel += '</select>';
-
-    window.pdRenderPicker_customers = renderPicker;  // expose for external callers
 
     lbl.outerHTML =
       '<div id="pd-picker-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;font-size:12px;">'
@@ -899,11 +900,13 @@ if (typeof HNW_DATA === 'undefined') {
       r.readAsText(f);
     });
 
-    // Show active badge below picker
     if (ns_active && all[ns_active]) {
       updateActiveBadge_customers(ns_active, all[ns_active]);
     }
   }
+
+  // Expose globally at IIFE scope so it's always set, even before first call
+  window.pdRenderPicker_customers = renderPicker;
 
   function updateActiveBadge_customers(name, info) {
     var existing = document.getElementById('pd-active-customers');
@@ -927,7 +930,7 @@ if (typeof HNW_DATA === 'undefined') {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof customerData !== 'undefined') customerData = data;
-    var pa=document.getElementById("pasteArea");if(pa&&active&&active.rawText){pa.value=active.rawText;}if(typeof checkReady==="function") checkReady();
+    var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry&&_entry.rawText){_pa.value=_entry.rawText;_pa.dispatchEvent(new Event("input"));}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -947,10 +950,8 @@ if (typeof HNW_DATA === 'undefined') {
   };
 
   window.pdTriggerParse_customers = function(text, name) {
-    // Parse the raw CSV text using the tool's existing parse function
     if (typeof _pdOrigParse_customers === 'function') {
       _pdOrigParse_customers(text);
-      // After parse, data_var is populated — save it
       setTimeout(function() {
         var data = (typeof customerData !== 'undefined') ? customerData : [];
         if (data.length) {
@@ -959,11 +960,11 @@ if (typeof HNW_DATA === 'undefined') {
           updateActiveBadge_customers(name, pdAllDatasets_customers()[name]);
           
         }
-      }, 100);
+      }, 150);
     }
   };
 
-  window._pdOrigParse_customers = null; // set below after tool's function is defined
+  window._pdOrigParse_customers = null;
 
   document.addEventListener('DOMContentLoaded', function() {
     var all = pdAllDatasets_customers();
@@ -974,7 +975,7 @@ if (typeof HNW_DATA === 'undefined') {
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
-        var pa=document.getElementById("pasteArea");if(pa&&active&&active.rawText){pa.value=active.rawText;}if(typeof checkReady==="function") checkReady();
+        var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry&&_entry.rawText){_pa.value=_entry.rawText;_pa.dispatchEvent(new Event("input"));}if(typeof checkReady==="function") checkReady();
       }
     }
   });
@@ -984,31 +985,44 @@ if (typeof HNW_DATA === 'undefined') {
 
 // HNW uses textarea — override pdTriggerParse_customers for text passthrough
 window.pdTriggerParse_customers = function(text, name) {
-  var all = pdAllDatasets_customers();
-  // Count lines as postcodes
+  // Count lines as proxy for record count
   var lines = text.trim().split('\n').filter(function(l){return l.trim();});
-  var fakeData = lines; // store raw lines as "data" for count purposes
-  pdSave_customers(fakeData, name);
-  // Also store raw text alongside
+  pdSave_customers(lines, name);
+  // Persist raw text alongside the record array
   try {
     var stored = JSON.parse(localStorage.getItem('geo_pd_eleven-australia_customers_datasets')||'{}');
-    if (stored[name]) { stored[name].rawText = text; localStorage.setItem('geo_pd_eleven-australia_customers_datasets', JSON.stringify(stored)); }
+    if (stored[name]) {
+      stored[name].rawText = text;
+      localStorage.setItem('geo_pd_eleven-australia_customers_datasets', JSON.stringify(stored));
+    }
   } catch(e) {}
-  // Fill the pasteArea
+  // Fill pasteArea so the tool can plot immediately
   var pa = document.getElementById('pasteArea');
-  if (pa) { pa.value = text; if(typeof checkReady==='function') checkReady(); }
-  // Re-render picker
-  var all2 = pdAllDatasets_customers();
-  setTimeout(function() {
-    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
-    location.reload(); // simplest — picker will restore on reload
-  }, 200);
+  if (pa) {
+    pa.value = text;
+    pa.dispatchEvent(new Event('input'));
+    if (typeof checkReady === 'function') checkReady();
+  }
+  // Re-render picker with the new dataset
+  if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+  var all = pdAllDatasets_customers();
+  if (all[name]) {
+    var existing = document.getElementById('pd-active-customers');
+    var info = all[name];
+    var badge = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records</div>';
+    if (existing) existing.outerHTML = badge;
+    else {
+      var picker = document.getElementById('pd-picker-customers');
+      if (picker) picker.insertAdjacentHTML('afterend', badge);
+    }
+  }
 };
 
 document.addEventListener('DOMContentLoaded', function() {
+  // Restore raw text from active dataset into pasteArea on page load
   var active = pdLoad_customers();
   if (active) {
-    // Restore raw text into pasteArea
     try {
       var stored = JSON.parse(localStorage.getItem('geo_pd_eleven-australia_customers_datasets')||'{}');
       var entry = stored[active.name];
@@ -1016,8 +1030,8 @@ document.addEventListener('DOMContentLoaded', function() {
         var pa = document.getElementById('pasteArea');
         if (pa) {
           pa.value = entry.rawText;
-          pa.dispatchEvent(new Event('input')); // triggers checkReady in tool
-          if(typeof checkReady==='function') checkReady();
+          pa.dispatchEvent(new Event('input'));
+          if (typeof checkReady === 'function') checkReady();
         }
       }
     } catch(e) {}

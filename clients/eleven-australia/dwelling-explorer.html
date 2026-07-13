@@ -6,7 +6,6 @@
 /* ── Pratt Digital PIN gate ── */
 (function() {
   var SESSION_KEY = 'geo_pd_eleven-australia_auth';
-  var HASH = '6933'; // replaced with SHA-256 hex at runtime check
 
   async function sha256(str) {
     var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -16,9 +15,8 @@
   var correctHash = null;
   sha256('6933').then(function(h) { correctHash = h; });
 
-  if (sessionStorage.getItem(SESSION_KEY) === '1') return; // already unlocked this tab
+  if (sessionStorage.getItem(SESSION_KEY) === '1') return;
 
-  // Build overlay
   var overlay = document.createElement('div');
   overlay.id = 'pd-pin-overlay';
   overlay.style.cssText = [
@@ -145,7 +143,7 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
   var DS_KEY  = 'geo_pd_eleven-australia_customers_datasets';
   var ACT_KEY = 'geo_pd_eleven-australia_customers_active';
 
-  function _all()  { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
   function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
 
   window.pdSave_customers = function(data, name) {
@@ -163,7 +161,7 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
     return Object.assign({ name: name }, all[name]);
   };
   window.pdAllDatasets_customers = function() { return _all(); };
-  window.pdSetActive_customers = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdSetActive_customers   = function(name) { localStorage.setItem(ACT_KEY, name); };
   window.pdDeleteDataset_customers = function(name) {
     var all = _all(); delete all[name]; _save(all);
     var keys = Object.keys(all);
@@ -172,6 +170,10 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
   window.pdClear_customers = function() {
     localStorage.removeItem(DS_KEY);
     localStorage.removeItem(ACT_KEY);
+  };
+  window.pdRawGet_customers = function(name) {
+    var all = _all();
+    return all[name] || null;
   };
 })();
 </script>
@@ -934,7 +936,8 @@ buildLayer(currentMode);
   function renderPicker(ns_active) {
     var all = pdAllDatasets_customers();
     var names = Object.keys(all);
-    var lbl = document.getElementById('uploadLabel');
+    // Find the element to replace: either the original label or the existing picker div
+    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
     if (!lbl) return;
 
     var sel = '<select id="pd-sel-customers" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
@@ -943,8 +946,6 @@ buildLayer(currentMode);
            + n + ' (' + all[n].count + ')</option>';
     });
     sel += '</select>';
-
-    window.pdRenderPicker_customers = renderPicker;  // expose for external callers
 
     lbl.outerHTML =
       '<div id="pd-picker-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;font-size:12px;">'
@@ -969,11 +970,13 @@ buildLayer(currentMode);
       r.readAsText(f);
     });
 
-    // Show active badge below picker
     if (ns_active && all[ns_active]) {
       updateActiveBadge_customers(ns_active, all[ns_active]);
     }
   }
+
+  // Expose globally at IIFE scope so it's always set, even before first call
+  window.pdRenderPicker_customers = renderPicker;
 
   function updateActiveBadge_customers(name, info) {
     var existing = document.getElementById('pd-active-customers');
@@ -1017,10 +1020,8 @@ buildLayer(currentMode);
   };
 
   window.pdTriggerParse_customers = function(text, name) {
-    // Parse the raw CSV text using the tool's existing parse function
     if (typeof _pdOrigParse_customers === 'function') {
       _pdOrigParse_customers(text);
-      // After parse, data_var is populated — save it
       setTimeout(function() {
         var data = (typeof customerData !== 'undefined') ? customerData : [];
         if (data.length) {
@@ -1029,11 +1030,11 @@ buildLayer(currentMode);
           updateActiveBadge_customers(name, pdAllDatasets_customers()[name]);
           
         }
-      }, 100);
+      }, 150);
     }
   };
 
-  window._pdOrigParse_customers = null; // set below after tool's function is defined
+  window._pdOrigParse_customers = null;
 
   document.addEventListener('DOMContentLoaded', function() {
     var all = pdAllDatasets_customers();
@@ -1052,12 +1053,11 @@ buildLayer(currentMode);
 })();
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Wire up the tool's parse function to the dataset picker
   if (typeof parseCustomers === 'function') {
     _pdOrigParse_customers = parseCustomers;
     parseCustomers = function(text) {
       _pdOrigParse_customers(text);
-      // If the picker UI isn't shown yet (no saved datasets), save this upload
+      // If picker isn't shown yet (first upload), save and render
       if (!document.getElementById('pd-picker-customers')) {
         setTimeout(function() {
           var data = (typeof customerData !== 'undefined') ? customerData : [];
