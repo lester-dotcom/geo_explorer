@@ -226,6 +226,8 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
     }});
     sel += '</select>';
 
+    window.pdRenderPicker_{ns} = renderPicker;  // expose for external callers
+
     lbl.outerHTML =
       '<div id="pd-picker-{ns}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;font-size:12px;">'
       + '<div style="font-weight:600;color:{color};margin-bottom:6px">Saved datasets</div>'
@@ -351,6 +353,21 @@ document.addEventListener('DOMContentLoaded', function() {{
     _pdOrigParse_{ns} = {parse_fn};
     {parse_fn} = function(text) {{
       _pdOrigParse_{ns}(text);
+      // If the picker UI isn't shown yet (no saved datasets), save this upload
+      if (!document.getElementById('pd-picker-{ns}')) {{
+        setTimeout(function() {{
+          var data = (typeof {data_var} !== 'undefined') ? {data_var} : [];
+          if (!data.length) return;
+          var fi = document.getElementById('fileInput');
+          var defName = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'My Customers';
+          var name = window.prompt('Name this dataset:', defName);
+          if (name === null) name = defName;
+          pdSave_{ns}(data, name.trim() || defName);
+          if (typeof pdRenderPicker_{ns} === 'function') pdRenderPicker_{ns}(name.trim() || defName);
+          {on_save_extra}
+        }}, 150);
+      }}
     }};
   }}
 }});
@@ -433,7 +450,11 @@ document.addEventListener('DOMContentLoaded', function() {{
       var entry = stored[active.name];
       if (entry && entry.rawText) {{
         var pa = document.getElementById('pasteArea');
-        if (pa) {{ pa.value = entry.rawText; if(typeof checkReady==='function') checkReady(); }}
+        if (pa) {{
+          pa.value = entry.rawText;
+          pa.dispatchEvent(new Event('input')); // triggers checkReady in tool
+          if(typeof checkReady==='function') checkReady();
+        }}
       }}
     }} catch(e) {{}}
   }}
@@ -586,14 +607,26 @@ def main():
             f.write(html)
         processed += 1
 
-    # Copy profile-tool directory if present
+    # Copy profile-tool directory and patch its index.html
     profile_src = os.path.join(script_dir, 'profile-tool')
     if os.path.isdir(profile_src):
         profile_dst = os.path.join(out_dir, 'profile-tool')
         if os.path.exists(profile_dst):
             shutil.rmtree(profile_dst)
         shutil.copytree(profile_src, profile_dst)
-        print(f"  ○ Copied   : profile-tool/")
+        # Patch profile-tool/index.html with dataset picker
+        pt_index = os.path.join(profile_dst, 'index.html')
+        if os.path.exists(pt_index):
+            with open(pt_index, 'r', encoding='utf-8') as f:
+                pt_html = f.read()
+            if args.pin:
+                pt_html = pt_html.replace('<head>', '<head>\n' + pin_gate_script(args.pin, slug), 1)
+            pt_html = patch_profile_tool_html(pt_html, slug)
+            with open(pt_index, 'w', encoding='utf-8') as f:
+                f.write(pt_html)
+            print(f"  ✓ Patched  : profile-tool/index.html  (localStorage persistence added)")
+        else:
+            print(f"  ○ Copied   : profile-tool/")
 
     print(f"\n  {processed} files written to clients/{slug}/")
     print(f"\n── Next steps ──────────────────────────────────────────────")

@@ -1281,6 +1281,8 @@ function loadSample(ds) {
     });
     sel += '</select>';
 
+    window.pdRenderPicker_customers = renderPicker;  // expose for external callers
+
     lbl.outerHTML =
       '<div id="pd-picker-customers" style="border:1.5px solid #4f46e5;border-radius:8px;padding:10px 12px;font-size:12px;">'
       + '<div style="font-weight:600;color:#4f46e5;margin-bottom:6px">Saved datasets</div>'
@@ -1409,6 +1411,8 @@ function loadSample(ds) {
            + n + ' (' + all[n].count + ')</option>';
     });
     sel += '</select>';
+
+    window.pdRenderPicker_locations = renderPicker;  // expose for external callers
 
     lbl.outerHTML =
       '<div id="pd-picker-locations" style="border:1.5px solid #d97706;border-radius:8px;padding:10px 12px;font-size:12px;">'

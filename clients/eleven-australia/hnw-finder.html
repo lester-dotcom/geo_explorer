@@ -874,6 +874,8 @@ if (typeof HNW_DATA === 'undefined') {
     });
     sel += '</select>';
 
+    window.pdRenderPicker_customers = renderPicker;  // expose for external callers
+
     lbl.outerHTML =
       '<div id="pd-picker-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;font-size:12px;">'
       + '<div style="font-weight:600;color:#7c3aed;margin-bottom:6px">Saved datasets</div>'
@@ -1014,7 +1016,11 @@ document.addEventListener('DOMContentLoaded', function() {
       var entry = stored[active.name];
       if (entry && entry.rawText) {
         var pa = document.getElementById('pasteArea');
-        if (pa) { pa.value = entry.rawText; if(typeof checkReady==='function') checkReady(); }
+        if (pa) {
+          pa.value = entry.rawText;
+          pa.dispatchEvent(new Event('input')); // triggers checkReady in tool
+          if(typeof checkReady==='function') checkReady();
+        }
       }
     } catch(e) {}
   }

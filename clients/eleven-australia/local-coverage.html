@@ -1131,6 +1131,8 @@ function loadSampleCustomers() {
     });
     sel += '</select>';
 
+    window.pdRenderPicker_customers = renderPicker;  // expose for external callers
+
     lbl.outerHTML =
       '<div id="pd-picker-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;font-size:12px;">'
       + '<div style="font-weight:600;color:#16a34a;margin-bottom:6px">Saved datasets</div>'
@@ -1244,6 +1246,21 @@ document.addEventListener('DOMContentLoaded', function() {
     _pdOrigParse_customers = parseCustomers;
     parseCustomers = function(text) {
       _pdOrigParse_customers(text);
+      // If the picker UI isn't shown yet (no saved datasets), save this upload
+      if (!document.getElementById('pd-picker-customers')) {
+        setTimeout(function() {
+          var data = (typeof customerData !== 'undefined') ? customerData : [];
+          if (!data.length) return;
+          var fi = document.getElementById('fileInput');
+          var defName = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'My Customers';
+          var name = window.prompt('Name this dataset:', defName);
+          if (name === null) name = defName;
+          pdSave_customers(data, name.trim() || defName);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name.trim() || defName);
+          if(typeof checkReady==="function") checkReady();
+        }, 150);
+      }
     };
   }
 });
