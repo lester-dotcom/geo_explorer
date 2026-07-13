@@ -1207,6 +1207,50 @@ function generateOverlapBrief() {
   <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
   <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
 </div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────
+function clearAll() {
+  removeAllLayers();
+  cData=[]; lData=[]; cResult=[]; lResult=[];
+  ['fi-c','fi-l'].forEach(id=>document.getElementById(id).value='');
+  ['pa-c','pa-l'].forEach(id=>document.getElementById(id).value='');
+  ['fn-c','fn-l'].forEach(id=>document.getElementById(id).textContent='');
+  isolatedLayer = null;
+  preIsolationState = null;
+  document.getElementById('isolation-hint').style.display = 'none';
+  document.getElementById('exp-served').style.display = 'none';
+  document.getElementById('exp-gaps').style.display = 'none';
+  document.getElementById('exp-brief').style.display = 'none';
+  document.getElementById('exp-brief').style.display = 'none';
+  document.getElementById('ul-c').className='upload-label';
+  document.getElementById('ul-l').className='upload-label';
+  document.getElementById('statsPanel').style.display='none';
+  document.getElementById('topPanel').style.display='none';
+  document.getElementById('indexPanel').style.display='none';
+  document.getElementById('progressWrap').classList.remove('active');
+  setStatus('Load at least one dataset to begin. Both datasets enable overlap analysis.');
+  checkReady();
+  map.setView([52.5,-1.5],6);
+}
+
+// ── Samples ───────────────────────────────────────────────────────────────
+function loadSample(ds) {
+  if (ds==='c') {
+    document.getElementById('pa-c').value=`postcode\nDE17 1AL\nB38 3FE\nST19 8DX\nG50 0AD\nB11 3VY\nSW19 8HZ\nBN35 8SJ\nCF24 9LA\nAL9 2SP\nBD21 2HP\nNW3 1RE\nBS23 5YL\nEX19 0TW\nW9 6DW\nS7 9QX\nM28 1BJ\nGU7 4DJ\nIP4 1RL\nCF33 5GQ\nBS15 3LZ\nN3 9ZG\nPO20 3GT\nEH17 4ZW\nB12 5BJ\nPR1 0PR\nLS28 1HX\nIP24 5HZ\nNR22 6ZT\nE8 4FJ\nTN36 8WL\nSG1 9SX\nG3 5JF\nSO22 7DB\nHU12 1FZ\nEC3 6YD\nEH28 6YT\nPO10 4WA\nWV7 1WL\nWD22 5EN\nG76 2TA\nME8 4VG\nSO18 1ZN\nYO33 8YH\nE15 5GW\nGU18 8AY\nS70 7AE\nBS31 4JB\nB34 9DD\nTN9 7DW\nWD16 2FU\nOX1 2LV\nIP16 9SH\nRG10 3NR\nST9 5TV\nCF29 1JJ\nSE25 5AX\nOX10 3XJ\nSW5 1ZB\nB21 1BP\nN3 8JL\nST4 7HW\nE1 9XU\nB36 7SH\nN19 1SQ\nG53 6TB\nST13 1BR\nTN2 5EJ\nM27 3WT\nE6 6GL\nCF52 3DT\nEX21 8EB\nDE43 8AD\nSG15 3GS\nLE12 7HR\nGL9 0GR\nSW2 6LT\nWF7 6WU\nE16 3NH\nSE21 9WB\nSG3 5BB\nCB24 7VV\nEC1 0VD\nYO53 2DY\nN1 3RE\nPE21 9JX\nNE21 0YD\nG44 9XV\nS54 4HP\nB31 4RF\nST9 4TP\nSG11 1AT\nCV9 9ED\nRG7 3VL\nE1 5DJ\nBS44 4GT\nYO17 8NY\nEX19 8AW\nS20 1FL\nW2 1WF\nBD9 4YH\nCT19 5HZ\nYO56 4VU\nB44 0DZ\nG53 4BA\nL10 2ZL\nEC4 7WS\nOX24 0ED\nPE6 2WB\nYO19 5XW\nE12 6FB\nS38 5BQ\nB2 3EQ\nGU21 8SY\nSG6 2JG\nEX5 2SA\nM15 5SJ\nLS26 2ER\nIP16 0UJ\nM35 7QN\nBB9 3JA\nDE59 3RP\nBD22 1LQ\nDE21 8RW\nL5 0EL\nM14 9LB\nNW8 9SQ\nTN3 5SY\nSO26 1RX\nM26 4BS\nSW2 8WH\nBS33 6DP\nNN1 5EN\nSO17 4SP\nG10 4WF\nM27 6RG\nNE64 9NR\nRG28 0NN\nB2 6XY\nDE48 5TT\nCF10 3VU\nKT15 2DN\nSO34 9PD\nBB5 3NJ\nEX18 3FA\nSE13 3UY\nYO50 1TS\nPE12 9HR\nNR12 6JF\nDE51 0ES\nB11 2VT\nSE16 8JE\nCF39 2TV\nOX20 9PT\nNE58 8SW\nCF18 2UT\nLS10 3ZL\nWD16 8UZ\nB32 4TD\nCT11 4JL\nL14 5WD\nE5 2JR\nBN20 2HD\nG35 6PW\nCF59 6BH\nYO15 6RX\nBN23 0XR\nNG18 0QN\nSG15 6SW\nSG2 8YJ\nLE17 3LS\nLE12 0RP\nST3 6GT\nGL44 2YW\nSW19 6XX\nDE65 0DZ\nG63 2TG\nSE16 4RP\nB4 7PP\nWD6 6LS\nB45 1UA\nSG6 8BQ\nB17 1ZB\nSG16 0JH\nYO28 0YF\nB31 2UE\nOX31 3TL\nWD18 5GY\nNE47 1GN\nNW7 9AN\nCB7 6RH\nN6 9ZJ\nNW3 4YE\nKT20 9BQ\nPO18 6QD\nSO15 5AS\nPR2 7ES\nBS29 7FS\nM11 8ZL\nNE65 8UT\nG78 9LP\nYO54 3DL\nPE3 7JT\nOX43 9RP\nSE1 7PG\nLE16 3QL\nL24 4YL\nOX14 0VH\nN13 3SU\nOX13 3UZ\nCT7 7TA\nN18 4JR\nBN15 3NX\nBS43 7WV\nL31 6WP\nBS8 7LN\nB44 3EH\nS53 1WG\nM27 3UL\nME13 9VY\nWF2 1HN\nB20 5GN\nSW10 8FL\nSE13 0WN\nBN27 2ZU\nNW4 0XN\nNG3 7TP\nM20 0LU\nW1 1RU\nN5 9ZB\nE14 2XN\nN13 3EW\nWD13 6YY\nKT9 9JV\nEH19 7TN\nHU10 9SN\nOX40 9BY\nTN26 1HZ\nB3 4DG\nB33 2WD\nE17 0ST\nBN10 9UN\nSE4 3NN\nBN38 7DJ\nGL53 4ZX\nDE62 3SE\nRG21 3ZF\nGL21 4FD\nSE22 2NY\nSG5 9NT\nW8 7NR\nBD9 8WU\nG82 1YB\nPE19 6PY\nB43 0DJ\nST14 9XA\nWD14 4XB\nWD10 2UV\nDE42 7LG\nNE2 6ZU\nN17 7QS\nL9 5EG\nL2 6UN\nDE64 6WB\nCF36 1PL\nS69 1RV\nPR7 0WT\nG32 0HV\nBS28 9UZ\nCF10 0HL\nRG30 2NT\nPE1 7EA\nNN15 9JG\nS43 8AW\nG21 1JE\nCF50 1ZF\nNR20 4VL\nG36 7UJ\nCF40 8FR\nM26 9VF\nHU18 1LS\nL23 8LA\nWF2 4XX\nDE59 7FT\nRG9 7QP\nOX6 8RT\nS66 3JX\nEH24 3SB\nS58 7RR\nDE67 2UB\nW10 8XP\nIP11 1TE\nPO4 7AF\nG25 2DU\nGU24 4PY\nBN17 6ZD\nYO54 5WR\nS55 7WB\nCV1 1JZ\nWV15 4JD\nG74 1ZE\nCF13 2NA\nSE13 5BN\nBS22 5SF\nB37 8SX\nWV10 2GG\nN8 9RY\nWV13 3UX\nE8 3TZ\nB47 7LA\nGL1 7NW\nEC1 1TQ\nNE7 4ZS\nBN12 4TN\nM35 6UE\nB30 6XQ\nCB5 4NA\nYO9 6LA\nOX35 0YU\nYO15 4JY\nEX9 5JZ\nM26 9LF\nNN11 1ZZ\nSE8 4TB\nCB14 5FD\nGL23 4PS\nM11 3FW\nIP24 5VV\nGL31 4GL\nGL32 7NP\nEX14 1TD\nE7 3RW\nBS37 1RA\nLS21 8ET\nBS42 4XR\nPR2 5EJ\nNG7 0YW\nS78 9JZ\nSE25 7NZ\nG22 1FB\nSE7 4UE\nN21 3WF\nEH35 7QW\nG44 9FS\nDE49 1UY\nG21 4BQ\nB9 7TJ\nYO61 5EQ\nRG21 5BR\nBD17 3ET\nN17 3ZZ\nNE26 0BP\nB36 2XH\nN1 8HX\nB8 3PF\nKT5 9AL\nHU7 2FW\nB44 2EA\nW13 0QJ\nNE9 5AG\nLS23 0FS\nPO4 1DU\nCF23 5VX\nNW8 7VJ\nNE63 0VN\nCF43 0BU\nYO45 6SE\nNR4 7DD\nS66 9FD\nW10 4YZ\nNE2 8PR\nNE27 8NT\nSO14 9SE\nKT14 1ZZ\nIP27 8HS\nCF29 3SP\nYO4 7RS\nTN5 1PS\nS47 4QF\nBN5 7DD\nYO13 1DS\nN20 5FW\nSE22 9WW\nL2 1SQ\nIP19 6BN\nNE33 4QE\nCB11 8HF\nDE52 7JE\nBS5 8QE\nWD9 4XJ\nEX20 6WY\nNE60 8AY\nDE55 4AG\nBD11 4PQ\nSW5 2FX\nDE54 6DF\nTN28 0DV\nB7 6ST\nL25 2QN\nME7 5XY\nN12 0FG\nSG17 9BD\nBD9 7SU\nNE47 7SL\nB8 8EQ\nG66 1NX\nLE14 8NB\nB13 6YB\nSW6 3NH\nWD19 2LN\nS78 1AU\nSG1 6GF\nEH18 8JV\nOX20 5DR\nHU13 0SA\nCF46 1PX\nG65 9RZ\nG41 4ER\nSW15 5GY\nCF47 5DS\nYO39 1JS\nNE10 6VD\nEH50 4PJ\nL9 2DV\nDE4 1VV\nM30 5QZ\nEX36 2JE\nE10 4HG\nNE37 2ZD\nM12 7TX\nWD4 9TX\nDE24 9PZ\nS54 2TD\nNG2 7ZN\nKT20 4XB\nBS8 8DN\nCF50 7BB\nBS43 4DZ\nHU18 1YY\nSO17 6TX\nOX11 0TX\nDE42 3PY\nNG16 8FB\nCF27 1PD\nNR33 2BJ\nBN48 7TV\nSO49 9GQ\nEH3 4RS\nGU10 5YB\nKT6 5DP\nN19 8RN\nB45 9FP\nN10 9FQ\nS42 6FY\nCT1 1NW\nEH11 5FV\nN18 6VQ\nSW13 5NG\nB6 5UH\nB19 2FD\nS12 1VW\nYO20 8BP\nIP24 9FY\nEH11 2GG\nYO12 9GT\nSE11 6QJ\nCF14 9NT\nB27 8JN\nEX23 7HQ\nWV3 9TT\nWD23 4RV\nPO7 6GH\nEX7 9FL\nSE17 7QW\nNW4 8EN\nN12 2LT\nGL15 8FS\nN17 3TQ\nSW19 6BR\nNR28 5JR\nN10 5JA\nS59 1ZP\nKT10 2FB\nWF10 7FU\nCF23 9AD\nSW13 4HF\nRG29 9VS\nNW9 4JN\nW7 0JS\nDE16 9TD\nNW9 7YW\nSW12 8XJ\nME1 2NS\nSW2 9QJ\nOX44 6GD\nSO51 5DV\nRG20 8VW\nSW14 6UB\nDE9 6QL\nSG2 0QD\nL33 3ZE`;
+    parseCSV(document.getElementById('pa-c').value,'c');
+  } else {
+    document.getElementById('pa-l').value=`name,postcode\nMayfair Studio,W1S 1NB\nShoreditch,EC2A 4PU\nChelsea,SW3 2LU\nManchester Northern Quarter,M4 1HW\nManchester Didsbury,M20 2DW\nBirmingham Bullring,B5 4BP\nLeeds City Centre,LS1 4AJ\nLiverpool City Centre,L1 8JF\nBristol Clifton,BS8 1TH\nEdinburgh New Town,EH2 4HQ\nGlasgow City Centre,G1 1XX\nBrighton North Laine,BN1 1HB\nSheffield City Centre,S1 2PP\nNottingham,NG1 2DP\nNewcastle Grey Street,NE1 6EE`;
+    parseCSV(document.getElementById('pa-l').value,'l');
+  }
+}
+</script>
 
 <script>
 /* ── PD client persistence: overlap-map ── */
@@ -1254,50 +1298,6 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 });
-</script>
-</body>
-</html>`;
-
-  const w = window.open('', '_blank');
-  w.document.write(briefHTML);
-  w.document.close();
-}
-
-// ── Clear ─────────────────────────────────────────────────────────────────
-function clearAll() {
-  removeAllLayers();
-  cData=[]; lData=[]; cResult=[]; lResult=[];
-  ['fi-c','fi-l'].forEach(id=>document.getElementById(id).value='');
-  ['pa-c','pa-l'].forEach(id=>document.getElementById(id).value='');
-  ['fn-c','fn-l'].forEach(id=>document.getElementById(id).textContent='');
-  isolatedLayer = null;
-  preIsolationState = null;
-  document.getElementById('isolation-hint').style.display = 'none';
-  document.getElementById('exp-served').style.display = 'none';
-  document.getElementById('exp-gaps').style.display = 'none';
-  document.getElementById('exp-brief').style.display = 'none';
-  document.getElementById('exp-brief').style.display = 'none';
-  document.getElementById('ul-c').className='upload-label';
-  document.getElementById('ul-l').className='upload-label';
-  document.getElementById('statsPanel').style.display='none';
-  document.getElementById('topPanel').style.display='none';
-  document.getElementById('indexPanel').style.display='none';
-  document.getElementById('progressWrap').classList.remove('active');
-  setStatus('Load at least one dataset to begin. Both datasets enable overlap analysis.');
-  checkReady();
-  map.setView([52.5,-1.5],6);
-}
-
-// ── Samples ───────────────────────────────────────────────────────────────
-function loadSample(ds) {
-  if (ds==='c') {
-    document.getElementById('pa-c').value=`postcode\nDE17 1AL\nB38 3FE\nST19 8DX\nG50 0AD\nB11 3VY\nSW19 8HZ\nBN35 8SJ\nCF24 9LA\nAL9 2SP\nBD21 2HP\nNW3 1RE\nBS23 5YL\nEX19 0TW\nW9 6DW\nS7 9QX\nM28 1BJ\nGU7 4DJ\nIP4 1RL\nCF33 5GQ\nBS15 3LZ\nN3 9ZG\nPO20 3GT\nEH17 4ZW\nB12 5BJ\nPR1 0PR\nLS28 1HX\nIP24 5HZ\nNR22 6ZT\nE8 4FJ\nTN36 8WL\nSG1 9SX\nG3 5JF\nSO22 7DB\nHU12 1FZ\nEC3 6YD\nEH28 6YT\nPO10 4WA\nWV7 1WL\nWD22 5EN\nG76 2TA\nME8 4VG\nSO18 1ZN\nYO33 8YH\nE15 5GW\nGU18 8AY\nS70 7AE\nBS31 4JB\nB34 9DD\nTN9 7DW\nWD16 2FU\nOX1 2LV\nIP16 9SH\nRG10 3NR\nST9 5TV\nCF29 1JJ\nSE25 5AX\nOX10 3XJ\nSW5 1ZB\nB21 1BP\nN3 8JL\nST4 7HW\nE1 9XU\nB36 7SH\nN19 1SQ\nG53 6TB\nST13 1BR\nTN2 5EJ\nM27 3WT\nE6 6GL\nCF52 3DT\nEX21 8EB\nDE43 8AD\nSG15 3GS\nLE12 7HR\nGL9 0GR\nSW2 6LT\nWF7 6WU\nE16 3NH\nSE21 9WB\nSG3 5BB\nCB24 7VV\nEC1 0VD\nYO53 2DY\nN1 3RE\nPE21 9JX\nNE21 0YD\nG44 9XV\nS54 4HP\nB31 4RF\nST9 4TP\nSG11 1AT\nCV9 9ED\nRG7 3VL\nE1 5DJ\nBS44 4GT\nYO17 8NY\nEX19 8AW\nS20 1FL\nW2 1WF\nBD9 4YH\nCT19 5HZ\nYO56 4VU\nB44 0DZ\nG53 4BA\nL10 2ZL\nEC4 7WS\nOX24 0ED\nPE6 2WB\nYO19 5XW\nE12 6FB\nS38 5BQ\nB2 3EQ\nGU21 8SY\nSG6 2JG\nEX5 2SA\nM15 5SJ\nLS26 2ER\nIP16 0UJ\nM35 7QN\nBB9 3JA\nDE59 3RP\nBD22 1LQ\nDE21 8RW\nL5 0EL\nM14 9LB\nNW8 9SQ\nTN3 5SY\nSO26 1RX\nM26 4BS\nSW2 8WH\nBS33 6DP\nNN1 5EN\nSO17 4SP\nG10 4WF\nM27 6RG\nNE64 9NR\nRG28 0NN\nB2 6XY\nDE48 5TT\nCF10 3VU\nKT15 2DN\nSO34 9PD\nBB5 3NJ\nEX18 3FA\nSE13 3UY\nYO50 1TS\nPE12 9HR\nNR12 6JF\nDE51 0ES\nB11 2VT\nSE16 8JE\nCF39 2TV\nOX20 9PT\nNE58 8SW\nCF18 2UT\nLS10 3ZL\nWD16 8UZ\nB32 4TD\nCT11 4JL\nL14 5WD\nE5 2JR\nBN20 2HD\nG35 6PW\nCF59 6BH\nYO15 6RX\nBN23 0XR\nNG18 0QN\nSG15 6SW\nSG2 8YJ\nLE17 3LS\nLE12 0RP\nST3 6GT\nGL44 2YW\nSW19 6XX\nDE65 0DZ\nG63 2TG\nSE16 4RP\nB4 7PP\nWD6 6LS\nB45 1UA\nSG6 8BQ\nB17 1ZB\nSG16 0JH\nYO28 0YF\nB31 2UE\nOX31 3TL\nWD18 5GY\nNE47 1GN\nNW7 9AN\nCB7 6RH\nN6 9ZJ\nNW3 4YE\nKT20 9BQ\nPO18 6QD\nSO15 5AS\nPR2 7ES\nBS29 7FS\nM11 8ZL\nNE65 8UT\nG78 9LP\nYO54 3DL\nPE3 7JT\nOX43 9RP\nSE1 7PG\nLE16 3QL\nL24 4YL\nOX14 0VH\nN13 3SU\nOX13 3UZ\nCT7 7TA\nN18 4JR\nBN15 3NX\nBS43 7WV\nL31 6WP\nBS8 7LN\nB44 3EH\nS53 1WG\nM27 3UL\nME13 9VY\nWF2 1HN\nB20 5GN\nSW10 8FL\nSE13 0WN\nBN27 2ZU\nNW4 0XN\nNG3 7TP\nM20 0LU\nW1 1RU\nN5 9ZB\nE14 2XN\nN13 3EW\nWD13 6YY\nKT9 9JV\nEH19 7TN\nHU10 9SN\nOX40 9BY\nTN26 1HZ\nB3 4DG\nB33 2WD\nE17 0ST\nBN10 9UN\nSE4 3NN\nBN38 7DJ\nGL53 4ZX\nDE62 3SE\nRG21 3ZF\nGL21 4FD\nSE22 2NY\nSG5 9NT\nW8 7NR\nBD9 8WU\nG82 1YB\nPE19 6PY\nB43 0DJ\nST14 9XA\nWD14 4XB\nWD10 2UV\nDE42 7LG\nNE2 6ZU\nN17 7QS\nL9 5EG\nL2 6UN\nDE64 6WB\nCF36 1PL\nS69 1RV\nPR7 0WT\nG32 0HV\nBS28 9UZ\nCF10 0HL\nRG30 2NT\nPE1 7EA\nNN15 9JG\nS43 8AW\nG21 1JE\nCF50 1ZF\nNR20 4VL\nG36 7UJ\nCF40 8FR\nM26 9VF\nHU18 1LS\nL23 8LA\nWF2 4XX\nDE59 7FT\nRG9 7QP\nOX6 8RT\nS66 3JX\nEH24 3SB\nS58 7RR\nDE67 2UB\nW10 8XP\nIP11 1TE\nPO4 7AF\nG25 2DU\nGU24 4PY\nBN17 6ZD\nYO54 5WR\nS55 7WB\nCV1 1JZ\nWV15 4JD\nG74 1ZE\nCF13 2NA\nSE13 5BN\nBS22 5SF\nB37 8SX\nWV10 2GG\nN8 9RY\nWV13 3UX\nE8 3TZ\nB47 7LA\nGL1 7NW\nEC1 1TQ\nNE7 4ZS\nBN12 4TN\nM35 6UE\nB30 6XQ\nCB5 4NA\nYO9 6LA\nOX35 0YU\nYO15 4JY\nEX9 5JZ\nM26 9LF\nNN11 1ZZ\nSE8 4TB\nCB14 5FD\nGL23 4PS\nM11 3FW\nIP24 5VV\nGL31 4GL\nGL32 7NP\nEX14 1TD\nE7 3RW\nBS37 1RA\nLS21 8ET\nBS42 4XR\nPR2 5EJ\nNG7 0YW\nS78 9JZ\nSE25 7NZ\nG22 1FB\nSE7 4UE\nN21 3WF\nEH35 7QW\nG44 9FS\nDE49 1UY\nG21 4BQ\nB9 7TJ\nYO61 5EQ\nRG21 5BR\nBD17 3ET\nN17 3ZZ\nNE26 0BP\nB36 2XH\nN1 8HX\nB8 3PF\nKT5 9AL\nHU7 2FW\nB44 2EA\nW13 0QJ\nNE9 5AG\nLS23 0FS\nPO4 1DU\nCF23 5VX\nNW8 7VJ\nNE63 0VN\nCF43 0BU\nYO45 6SE\nNR4 7DD\nS66 9FD\nW10 4YZ\nNE2 8PR\nNE27 8NT\nSO14 9SE\nKT14 1ZZ\nIP27 8HS\nCF29 3SP\nYO4 7RS\nTN5 1PS\nS47 4QF\nBN5 7DD\nYO13 1DS\nN20 5FW\nSE22 9WW\nL2 1SQ\nIP19 6BN\nNE33 4QE\nCB11 8HF\nDE52 7JE\nBS5 8QE\nWD9 4XJ\nEX20 6WY\nNE60 8AY\nDE55 4AG\nBD11 4PQ\nSW5 2FX\nDE54 6DF\nTN28 0DV\nB7 6ST\nL25 2QN\nME7 5XY\nN12 0FG\nSG17 9BD\nBD9 7SU\nNE47 7SL\nB8 8EQ\nG66 1NX\nLE14 8NB\nB13 6YB\nSW6 3NH\nWD19 2LN\nS78 1AU\nSG1 6GF\nEH18 8JV\nOX20 5DR\nHU13 0SA\nCF46 1PX\nG65 9RZ\nG41 4ER\nSW15 5GY\nCF47 5DS\nYO39 1JS\nNE10 6VD\nEH50 4PJ\nL9 2DV\nDE4 1VV\nM30 5QZ\nEX36 2JE\nE10 4HG\nNE37 2ZD\nM12 7TX\nWD4 9TX\nDE24 9PZ\nS54 2TD\nNG2 7ZN\nKT20 4XB\nBS8 8DN\nCF50 7BB\nBS43 4DZ\nHU18 1YY\nSO17 6TX\nOX11 0TX\nDE42 3PY\nNG16 8FB\nCF27 1PD\nNR33 2BJ\nBN48 7TV\nSO49 9GQ\nEH3 4RS\nGU10 5YB\nKT6 5DP\nN19 8RN\nB45 9FP\nN10 9FQ\nS42 6FY\nCT1 1NW\nEH11 5FV\nN18 6VQ\nSW13 5NG\nB6 5UH\nB19 2FD\nS12 1VW\nYO20 8BP\nIP24 9FY\nEH11 2GG\nYO12 9GT\nSE11 6QJ\nCF14 9NT\nB27 8JN\nEX23 7HQ\nWV3 9TT\nWD23 4RV\nPO7 6GH\nEX7 9FL\nSE17 7QW\nNW4 8EN\nN12 2LT\nGL15 8FS\nN17 3TQ\nSW19 6BR\nNR28 5JR\nN10 5JA\nS59 1ZP\nKT10 2FB\nWF10 7FU\nCF23 9AD\nSW13 4HF\nRG29 9VS\nNW9 4JN\nW7 0JS\nDE16 9TD\nNW9 7YW\nSW12 8XJ\nME1 2NS\nSW2 9QJ\nOX44 6GD\nSO51 5DV\nRG20 8VW\nSW14 6UB\nDE9 6QL\nSG2 0QD\nL33 3ZE`;
-    parseCSV(document.getElementById('pa-c').value,'c');
-  } else {
-    document.getElementById('pa-l').value=`name,postcode\nMayfair Studio,W1S 1NB\nShoreditch,EC2A 4PU\nChelsea,SW3 2LU\nManchester Northern Quarter,M4 1HW\nManchester Didsbury,M20 2DW\nBirmingham Bullring,B5 4BP\nLeeds City Centre,LS1 4AJ\nLiverpool City Centre,L1 8JF\nBristol Clifton,BS8 1TH\nEdinburgh New Town,EH2 4HQ\nGlasgow City Centre,G1 1XX\nBrighton North Laine,BN1 1HB\nSheffield City Centre,S1 2PP\nNottingham,NG1 2DP\nNewcastle Grey Street,NE1 6EE`;
-    parseCSV(document.getElementById('pa-l').value,'l');
-  }
-}
 </script>
 </body>
 </html>

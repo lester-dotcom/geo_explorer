@@ -830,48 +830,6 @@ function generateCustomerBrief() {
   <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
   <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
 </div>
-
-<script>
-/* ── PD client persistence: customer-map ── */
-
-function pdShowRestoredBadge_customers(saved) {
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = '<div id="pd-badge-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
-    + '<div style="font-weight:600;color:#16a34a">\u2713 <span id="pd-bc-customers"></span> saved</div>'
-    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-customers"></span>'
-    + ' &middot; <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#16a34a">Upload new list</a></div>'
-    + '</div>';
-  var c = document.getElementById('pd-bc-customers');
-  var d = document.getElementById('pd-bd-customers');
-  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-  if(typeof checkReady==="function") checkReady();
-}
-function pdClearAndReload_customers() {
-  pdClear_customers();
-  location.reload();
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  var saved = pdLoad_customers();
-  if (saved && saved.data && saved.data.length) {
-    customerData = saved.data;
-    pdShowRestoredBadge_customers(saved);
-    if (typeof checkReady === 'function') checkReady();
-  }
-
-  if (typeof parseCSV === 'function') {
-    var _orig = parseCSV;
-    parseCSV = function(text) {
-      _orig(text);
-      if (customerData && customerData.length > 0) {
-        pdSave_customers(customerData);
-      }
-    };
-  }
-});
-</script>
 </body>
 </html>`;
 
@@ -919,6 +877,48 @@ function loadSample() {
   document.getElementById('pasteArea').value = 'postcode\n' + pcs.join('\n');
   parseCSV(document.getElementById('pasteArea').value);
 }
+</script>
+
+<script>
+/* ── PD client persistence: customer-map ── */
+
+function pdShowRestoredBadge_customers(saved) {
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = '<div id="pd-badge-customers" style="border:1.5px solid #16a34a;border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
+    + '<div style="font-weight:600;color:#16a34a">\u2713 <span id="pd-bc-customers"></span> saved</div>'
+    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-customers"></span>'
+    + ' &middot; <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#16a34a">Upload new list</a></div>'
+    + '</div>';
+  var c = document.getElementById('pd-bc-customers');
+  var d = document.getElementById('pd-bd-customers');
+  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  if(typeof checkReady==="function") checkReady();
+}
+function pdClearAndReload_customers() {
+  pdClear_customers();
+  location.reload();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var saved = pdLoad_customers();
+  if (saved && saved.data && saved.data.length) {
+    customerData = saved.data;
+    pdShowRestoredBadge_customers(saved);
+    if (typeof checkReady === 'function') checkReady();
+  }
+
+  if (typeof parseCSV === 'function') {
+    var _orig = parseCSV;
+    parseCSV = function(text) {
+      _orig(text);
+      if (customerData && customerData.length > 0) {
+        pdSave_customers(customerData);
+      }
+    };
+  }
+});
 </script>
 </body>
 </html>

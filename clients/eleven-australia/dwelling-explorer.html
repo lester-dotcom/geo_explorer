@@ -894,7 +894,30 @@ function generateBrief() {
     + '<button class="print-btn secondary" onclick="window.close()">&#10005; Close</button>'
     + '<button class="print-btn primary" onclick="window.print()">&#128438; Save as PDF</button>'
     + '</div>'
-    + '
+    + '</body></html>';
+
+  const w = window.open('', '_blank');
+  w.document.write(briefHTML);
+  w.document.close();
+}
+
+function updateCustomerStats() {
+  const known = customerResults.filter(c => c.garden !== null);
+  if (!known.length) return;
+  const avg = key => Math.round(known.reduce((s,c) => s + c[key], 0) / known.length);
+  const avgGarden = (known.reduce((s,c) => s + c.garden, 0) / known.length).toFixed(1);
+  document.getElementById('cust-det').textContent   = avg('detached') + '%';
+  document.getElementById('cust-semi').textContent  = avg('semi') + '%';
+  document.getElementById('cust-terr').textContent  = avg('terraced') + '%';
+  document.getElementById('cust-flat').textContent  = avg('flat') + '%';
+  document.getElementById('cust-garden').textContent = avgGarden + ' / 10';
+  document.getElementById('cust-count').textContent  = known.length + ' customers with dwelling data';
+  document.getElementById('customer-stats-wrap').style.display = '';
+}
+
+buildLayer(currentMode);
+</script>
+
 <script>
 /* ── PD client persistence: dwelling-explorer ── */
 
@@ -934,29 +957,6 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 });
-</script>
-</body></html>';
-
-  const w = window.open('', '_blank');
-  w.document.write(briefHTML);
-  w.document.close();
-}
-
-function updateCustomerStats() {
-  const known = customerResults.filter(c => c.garden !== null);
-  if (!known.length) return;
-  const avg = key => Math.round(known.reduce((s,c) => s + c[key], 0) / known.length);
-  const avgGarden = (known.reduce((s,c) => s + c.garden, 0) / known.length).toFixed(1);
-  document.getElementById('cust-det').textContent   = avg('detached') + '%';
-  document.getElementById('cust-semi').textContent  = avg('semi') + '%';
-  document.getElementById('cust-terr').textContent  = avg('terraced') + '%';
-  document.getElementById('cust-flat').textContent  = avg('flat') + '%';
-  document.getElementById('cust-garden').textContent = avgGarden + ' / 10';
-  document.getElementById('cust-count').textContent  = known.length + ' customers with dwelling data';
-  document.getElementById('customer-stats-wrap').style.display = '';
-}
-
-buildLayer(currentMode);
 </script>
 </body>
 </html>

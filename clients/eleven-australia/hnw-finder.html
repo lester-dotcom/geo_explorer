@@ -760,67 +760,6 @@ function generateHNWBrief() {
   <button class="print-btn secondary" onclick="window.close()">✕ Close</button>
   <button class="print-btn primary" onclick="window.print()">🖨 Save as PDF</button>
 </div>
-
-<script>
-/* ── PD client persistence: hnw-finder ── */
-
-function pdShowRestoredBadge_customers(saved) {
-  var lbl = document.getElementById('uploadLabel');
-  if (!lbl) return;
-  lbl.outerHTML = '<div id="pd-badge-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
-    + '<div style="font-weight:600;color:#7c3aed">\u2713 <span id="pd-bc-customers"></span> saved</div>'
-    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-customers"></span>'
-    + ' &middot; <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#7c3aed">Upload new list</a></div>'
-    + '</div>';
-  var c = document.getElementById('pd-bc-customers');
-  var d = document.getElementById('pd-bd-customers');
-  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-  if(typeof checkReady==="function") checkReady();
-}
-function pdClearAndReload_customers() {
-  pdClear_customers();
-  location.reload();
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  // Restore: pre-fill pasteArea
-  var saved = pdLoadHnw();
-  if (saved && saved.text) {
-    var pa = document.getElementById('pasteArea');
-    if (pa) {
-      pa.value = saved.text;
-      if (typeof checkReady === 'function') checkReady();
-    }
-    var lines = saved.text.trim().split('\n').filter(function(l){return l.trim();}).length;
-    var fakeCount = {count: lines, savedAt: saved.savedAt, data:[]};
-    pdShowRestoredBadge_customers(fakeCount);
-    var c = document.getElementById('pd-bc-customers');
-    if (c) c.textContent = lines + ' postcodes';
-  }
-
-  // Save on file upload
-  var fi = document.getElementById('fileInput');
-  if (fi) {
-    fi.addEventListener('change', function() {
-      var f = fi.files[0]; if (!f) return;
-      var r = new FileReader();
-      r.onload = function(e) { pdSaveHnw(e.target.result); };
-      r.readAsText(f);
-    });
-  }
-
-  // Save on textarea input
-  var pa = document.getElementById('pasteArea');
-  if (pa) {
-    pa.addEventListener('input', function() {
-      pdSaveHnw(pa.value);
-    });
-  }
-});
-
-function pdClearAndReload_customers() { pdClearHnw(); location.reload(); }
-</script>
 </body></html>`;
 
   const w = window.open('', '_blank');
@@ -885,6 +824,67 @@ if (typeof HNW_DATA === 'undefined') {
   document.getElementById('statusMsg').className = 'status-msg success';
 }
 
+</script>
+
+<script>
+/* ── PD client persistence: hnw-finder ── */
+
+function pdShowRestoredBadge_customers(saved) {
+  var lbl = document.getElementById('uploadLabel');
+  if (!lbl) return;
+  lbl.outerHTML = '<div id="pd-badge-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
+    + '<div style="font-weight:600;color:#7c3aed">\u2713 <span id="pd-bc-customers"></span> saved</div>'
+    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-customers"></span>'
+    + ' &middot; <a href="#" onclick="pdClearAndReload_customers();return false;" style="color:#7c3aed">Upload new list</a></div>'
+    + '</div>';
+  var c = document.getElementById('pd-bc-customers');
+  var d = document.getElementById('pd-bd-customers');
+  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
+  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  if(typeof checkReady==="function") checkReady();
+}
+function pdClearAndReload_customers() {
+  pdClear_customers();
+  location.reload();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Restore: pre-fill pasteArea
+  var saved = pdLoadHnw();
+  if (saved && saved.text) {
+    var pa = document.getElementById('pasteArea');
+    if (pa) {
+      pa.value = saved.text;
+      if (typeof checkReady === 'function') checkReady();
+    }
+    var lines = saved.text.trim().split('\n').filter(function(l){return l.trim();}).length;
+    var fakeCount = {count: lines, savedAt: saved.savedAt, data:[]};
+    pdShowRestoredBadge_customers(fakeCount);
+    var c = document.getElementById('pd-bc-customers');
+    if (c) c.textContent = lines + ' postcodes';
+  }
+
+  // Save on file upload
+  var fi = document.getElementById('fileInput');
+  if (fi) {
+    fi.addEventListener('change', function() {
+      var f = fi.files[0]; if (!f) return;
+      var r = new FileReader();
+      r.onload = function(e) { pdSaveHnw(e.target.result); };
+      r.readAsText(f);
+    });
+  }
+
+  // Save on textarea input
+  var pa = document.getElementById('pasteArea');
+  if (pa) {
+    pa.addEventListener('input', function() {
+      pdSaveHnw(pa.value);
+    });
+  }
+});
+
+function pdClearAndReload_customers() { pdClearHnw(); location.reload(); }
 </script>
 </body>
 </html>

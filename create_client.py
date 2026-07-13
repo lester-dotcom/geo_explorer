@@ -185,6 +185,14 @@ def saved_badge_html(dataset='customers', color='#16a34a'):
 </div>"""
 
 
+def inject_before_body_end(html, script):
+    """Insert script before the LAST </body> tag (avoids hitting </body> inside JS template literals)."""
+    parts = html.rsplit('</body>', 1)
+    if len(parts) == 2:
+        return parts[0] + script + '\n</body>' + parts[1]
+    return html + script  # no </body> found — append
+
+
 # ── Per-tool patchers ──────────────────────────────────────────────────────────
 # Strategy: inject storage helpers in <head>, then append a single <script>
 # block before </body> that wraps the tool's parse function and handles restore.
@@ -242,7 +250,7 @@ document.addEventListener('DOMContentLoaded', function() {{
   }}
 }});
 </script>"""
-    html = html.replace('</body>', body_script + '\n</body>', 1)
+    html = inject_before_body_end(html, body_script)
     return html
 
 
@@ -274,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {{
   }}
 }});
 </script>"""
-    html = html.replace('</body>', body_script + '\n</body>', 1)
+    html = inject_before_body_end(html, body_script)
     return html
 
 
@@ -307,7 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {{
   }}
 }});
 </script>"""
-    html = html.replace('</body>', body_script + '\n</body>', 1)
+    html = inject_before_body_end(html, body_script)
     return html
 
 
@@ -374,7 +382,7 @@ document.addEventListener('DOMContentLoaded', function() {{
 
 function pdClearAndReload_customers() {{ pdClearHnw(); location.reload(); }}
 </script>"""
-    html = html.replace('</body>', body_script + '\n</body>', 1)
+    html = inject_before_body_end(html, body_script)
     return html
 
 
@@ -431,7 +439,7 @@ document.addEventListener('DOMContentLoaded', function() {{
   }}
 }});
 </script>"""
-    html = html.replace('</body>', body_script + '\n</body>', 1)
+    html = inject_before_body_end(html, body_script)
     return html
 
 
