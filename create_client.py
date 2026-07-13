@@ -388,8 +388,19 @@ def patch_dwelling_explorer(html, slug):
 
 
 def patch_customer_map(html, slug):
+    # customer-map stores {postcode: "XX1 1AA"} objects, but the launcher stores plain strings.
+    # Normalize whatever is in storage to {postcode:...} objects before assigning, so
+    # runAnalysis() can safely call c.postcode on every entry.
+    on_load_extra = (
+        'if(all&&all[name]&&all[name].data&&all[name].data.length){'
+        '  customerData=all[name].data.map(function(c){'
+        '    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};'
+        '  });'
+        '}'
+        'if(typeof checkReady==="function") checkReady();'
+    )
     return _standard_patcher(html, slug, 'parseCSV',
-        on_load_extra='if(typeof checkReady==="function") checkReady();',
+        on_load_extra=on_load_extra,
         on_save_extra='if(typeof checkReady==="function") checkReady();')
 
 
@@ -511,16 +522,33 @@ def patch_overlap_map(html, slug):
     html = html.replace('</head>',
         storage_head_script(slug, 'customers') + storage_head_script(slug, 'locations') + '\n</head>', 1)
 
-    # on_load_extra runs inside pdUseSelected where `name` and `all` are in scope
+    # on_load_extra runs in both DOMContentLoaded (name=active.name) and pdUseSelected.
+    # Normalize to {postcode,name} objects in case data was saved as plain strings by the launcher.
+    _norm_c = (
+        'if(all&&all[name]&&all[name].data&&all[name].data.length){'
+        '  cData=all[name].data.map(function(c){'
+        '    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};'
+        '  });'
+        '}'
+        'if(typeof checkReady==="function") checkReady();'
+    )
+    _norm_l = (
+        'if(all&&all[name]&&all[name].data&&all[name].data.length){'
+        '  lData=all[name].data.map(function(c){'
+        '    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};'
+        '  });'
+        '}'
+        'if(typeof checkReady==="function") checkReady();'
+    )
     picker_c = dataset_picker_js(
         ns='customers', color='#4f46e5', label_id='ul-c',
         data_var='cData',
-        on_load_extra='if(typeof checkReady==="function") checkReady();'
+        on_load_extra=_norm_c
     )
     picker_l = dataset_picker_js(
         ns='locations', color='#d97706', label_id='ul-l',
         data_var='lData',
-        on_load_extra='if(typeof checkReady==="function") checkReady();'
+        on_load_extra=_norm_l
     )
 
     body_script = f"""

@@ -961,7 +961,7 @@ function loadSample() {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof customerData !== 'undefined') customerData = data;
-    if(typeof checkReady==="function") checkReady();
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -1007,7 +1007,7 @@ function loadSample() {
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(typeof checkReady==="function") checkReady();
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof checkReady==="function") checkReady();
       }
     }
   });

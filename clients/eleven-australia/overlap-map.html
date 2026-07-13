@@ -1341,7 +1341,7 @@ function loadSample(ds) {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof cData !== 'undefined') cData = data;
-    if(typeof checkReady==="function") checkReady();
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -1387,7 +1387,7 @@ function loadSample(ds) {
       if (active && active.data && active.data.length) {
         if (typeof cData !== 'undefined') cData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(typeof checkReady==="function") checkReady();
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
       }
     }
   });
@@ -1470,7 +1470,7 @@ function loadSample(ds) {
     pdSetActive_locations(name);
     var data = all[name].data;
     if (typeof lData !== 'undefined') lData = data;
-    if(typeof checkReady==="function") checkReady();
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  lData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_locations(name, all[name]);
   };
 
@@ -1516,7 +1516,7 @@ function loadSample(ds) {
       if (active && active.data && active.data.length) {
         if (typeof lData !== 'undefined') lData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(typeof checkReady==="function") checkReady();
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  lData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
       }
     }
   });
