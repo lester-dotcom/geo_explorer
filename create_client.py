@@ -245,9 +245,7 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
 
     document.getElementById('pd-fi-{ns}').addEventListener('change', function() {{
       var f = this.files[0]; if (!f) return;
-      var name = window.prompt('Name this dataset:', f.name.replace(/[.][^.]+$/, ''));
-      if (name === null) name = f.name.replace(/[.][^.]+$/, '');
-      name = name.trim() || 'Dataset';
+      var name = f.name.replace(/[.][^.]+$/, '') || 'Dataset';
       var r = new FileReader();
       r.onload = function(e) {{ pdTriggerParse_{ns}(e.target.result, name); }};
       r.readAsText(f);
@@ -359,12 +357,10 @@ document.addEventListener('DOMContentLoaded', function() {{
           var data = (typeof {data_var} !== 'undefined') ? {data_var} : [];
           if (!data.length) return;
           var fi = document.getElementById('fileInput');
-          var defName = (fi && fi.files && fi.files[0])
-            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'My Customers';
-          var name = window.prompt('Name this dataset:', defName);
-          if (name === null) name = defName;
-          pdSave_{ns}(data, name.trim() || defName);
-          if (typeof pdRenderPicker_{ns} === 'function') pdRenderPicker_{ns}(name.trim() || defName);
+          var name = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          pdSave_{ns}(data, name);
+          if (typeof pdRenderPicker_{ns} === 'function') pdRenderPicker_{ns}(name);
           {on_save_extra}
         }}, 150);
       }}
@@ -486,14 +482,10 @@ document.addEventListener('DOMContentLoaded', function() {{
       _pdOrigParse_customers(text, ds);
       setTimeout(function() {{
         if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {{
-          var name = window.prompt('Name this dataset:', 'Customers');
-          if (name === null) name = 'Customers';
-          pdSave_customers(cData, name.trim() || 'Customers');
+          pdSave_customers(cData, 'Customers');
         }}
         if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {{
-          var name = window.prompt('Name this dataset:', 'Locations');
-          if (name === null) name = 'Locations';
-          pdSave_locations(lData, name.trim() || 'Locations');
+          pdSave_locations(lData, 'Locations');
         }}
       }}, 100);
     }};

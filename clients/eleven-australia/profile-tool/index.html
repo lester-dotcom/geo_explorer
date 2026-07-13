@@ -224,9 +224,7 @@
 
     document.getElementById('pd-fi-customers').addEventListener('change', function() {
       var f = this.files[0]; if (!f) return;
-      var name = window.prompt('Name this dataset:', f.name.replace(/[.][^.]+$/, ''));
-      if (name === null) name = f.name.replace(/[.][^.]+$/, '');
-      name = name.trim() || 'Dataset';
+      var name = f.name.replace(/[.][^.]+$/, '') || 'Dataset';
       var r = new FileReader();
       r.onload = function(e) { pdTriggerParse_customers(e.target.result, name); };
       r.readAsText(f);
@@ -326,12 +324,10 @@ document.addEventListener('DOMContentLoaded', function() {
           var data = (typeof rawData !== 'undefined') ? rawData : [];
           if (!data.length) return;
           var fi = document.getElementById('fileInput');
-          var defName = (fi && fi.files && fi.files[0])
-            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'My Customers';
-          var name = window.prompt('Name this dataset:', defName);
-          if (name === null) name = defName;
-          pdSave_customers(data, name.trim() || defName);
-          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name.trim() || defName);
+          var name = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          pdSave_customers(data, name);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
           if(typeof checkReady==="function") checkReady();
         }, 150);
       }
