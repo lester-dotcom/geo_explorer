@@ -186,68 +186,74 @@ textarea::placeholder { color: var(--muted); }
 </style>
 
 <script>
-/* ── Pratt Digital client storage (customers) ── */
+/* ── Pratt Digital multi-dataset storage: customers ── */
 (function() {
-  window.PD_KEY_CUSTOMERS = 'geo_pd_eleven-australia_customers';
-  window.pdSave_customers = function(data) {
-    try {
-      localStorage.setItem('geo_pd_eleven-australia_customers', JSON.stringify({
-        data: data,
-        savedAt: new Date().toISOString(),
-        count: data.length
-      }));
-    } catch(e) {}
+  var DS_KEY  = 'geo_pd_eleven-australia_customers_datasets';
+  var ACT_KEY = 'geo_pd_eleven-australia_customers_active';
+
+  function _all()  { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
+
+  window.pdSave_customers = function(data, name) {
+    var all = _all();
+    name = name || 'Dataset ' + (Object.keys(all).length + 1);
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    _save(all);
+    localStorage.setItem(ACT_KEY, name);
   };
   window.pdLoad_customers = function() {
-    try {
-      var s = localStorage.getItem('geo_pd_eleven-australia_customers');
-      if (!s) return null;
-      var obj = JSON.parse(s);
-      return obj && obj.data && obj.data.length ? obj : null;
-    } catch(e) { return null; }
+    var all = _all(), keys = Object.keys(all);
+    if (!keys.length) return null;
+    var name = localStorage.getItem(ACT_KEY);
+    if (!name || !all[name]) name = keys[0];
+    return Object.assign({ name: name }, all[name]);
   };
-  window.pdSavedAt_customers = function() {
-    try {
-      var s = localStorage.getItem('geo_pd_eleven-australia_customers');
-      if (!s) return null;
-      return JSON.parse(s).savedAt || null;
-    } catch(e) { return null; }
+  window.pdAllDatasets_customers = function() { return _all(); };
+  window.pdSetActive_customers = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdDeleteDataset_customers = function(name) {
+    var all = _all(); delete all[name]; _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
   };
   window.pdClear_customers = function() {
-    localStorage.removeItem('geo_pd_eleven-australia_customers');
+    localStorage.removeItem(DS_KEY);
+    localStorage.removeItem(ACT_KEY);
   };
 })();
 </script>
 <script>
-/* ── Pratt Digital client storage (locations) ── */
+/* ── Pratt Digital multi-dataset storage: locations ── */
 (function() {
-  window.PD_KEY_LOCATIONS = 'geo_pd_eleven-australia_locations';
-  window.pdSave_locations = function(data) {
-    try {
-      localStorage.setItem('geo_pd_eleven-australia_locations', JSON.stringify({
-        data: data,
-        savedAt: new Date().toISOString(),
-        count: data.length
-      }));
-    } catch(e) {}
+  var DS_KEY  = 'geo_pd_eleven-australia_locations_datasets';
+  var ACT_KEY = 'geo_pd_eleven-australia_locations_active';
+
+  function _all()  { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
+
+  window.pdSave_locations = function(data, name) {
+    var all = _all();
+    name = name || 'Dataset ' + (Object.keys(all).length + 1);
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    _save(all);
+    localStorage.setItem(ACT_KEY, name);
   };
   window.pdLoad_locations = function() {
-    try {
-      var s = localStorage.getItem('geo_pd_eleven-australia_locations');
-      if (!s) return null;
-      var obj = JSON.parse(s);
-      return obj && obj.data && obj.data.length ? obj : null;
-    } catch(e) { return null; }
+    var all = _all(), keys = Object.keys(all);
+    if (!keys.length) return null;
+    var name = localStorage.getItem(ACT_KEY);
+    if (!name || !all[name]) name = keys[0];
+    return Object.assign({ name: name }, all[name]);
   };
-  window.pdSavedAt_locations = function() {
-    try {
-      var s = localStorage.getItem('geo_pd_eleven-australia_locations');
-      if (!s) return null;
-      return JSON.parse(s).savedAt || null;
-    } catch(e) { return null; }
+  window.pdAllDatasets_locations = function() { return _all(); };
+  window.pdSetActive_locations = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdDeleteDataset_locations = function(name) {
+    var all = _all(); delete all[name]; _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
   };
   window.pdClear_locations = function() {
-    localStorage.removeItem('geo_pd_eleven-australia_locations');
+    localStorage.removeItem(DS_KEY);
+    localStorage.removeItem(ACT_KEY);
   };
 })();
 </script>
@@ -1253,48 +1259,282 @@ function loadSample(ds) {
 </script>
 
 <script>
-/* ── PD client persistence: overlap-map ── */
-function pdShowRestoredBadge_overlap(ds, saved) {
-  var color = ds === 'c' ? '#4f46e5' : '#d97706';
-  var labelId = ds === 'c' ? 'ul-c' : 'ul-l';
-  var dataset = ds === 'c' ? 'customers' : 'locations';
-  var lbl = document.getElementById(labelId);
-  if (!lbl) return;
-  lbl.outerHTML = '<div id="pd-badge-' + dataset + '" style="border:1.5px solid ' + color + ';border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
-    + '<div style="font-weight:600;color:' + color + '">\u2713 <span id="pd-bc-' + dataset + '"></span> saved</div>'
-    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-' + dataset + '"></span>'
-    + ' &middot; <a href="#" onclick="pdClearAndReload_' + dataset + '();return false;" style="color:' + color + '">Upload new list</a></div>'
-    + '</div>';
-  var c = document.getElementById('pd-bc-' + dataset);
-  var d = document.getElementById('pd-bd-' + dataset);
-  if (c) c.textContent = (saved.count||0) + (ds==='c'?' customers':' locations');
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-}
-function pdClearAndReload_customers() { pdClear_customers(); location.reload(); }
-function pdClearAndReload_locations() { pdClear_locations(); location.reload(); }
+
+/* ─── PD dataset picker: customers ─── */
+(function() {
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+    catch(e) { return ''; }
+  }
+
+  function renderPicker(ns_active) {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    var lbl = document.getElementById('ul-c');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-customers" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    });
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-customers" style="border:1.5px solid #4f46e5;border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:#4f46e5;margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_customers()" style="flex:1;padding:5px 0;background:#4f46e5;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '<button onclick="pdDeleteSelected_customers()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-customers" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-customers').addEventListener('change', function() {
+      var f = this.files[0]; if (!f) return;
+      var name = window.prompt('Name this dataset:', f.name.replace(/[.][^.]+$/, ''));
+      if (name === null) name = f.name.replace(/[.][^.]+$/, '');
+      name = name.trim() || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) { pdTriggerParse_customers(e.target.result, name); };
+      r.readAsText(f);
+    });
+
+    // Show active badge below picker
+    if (ns_active && all[ns_active]) {
+      updateActiveBadge_customers(ns_active, all[ns_active]);
+    }
+  }
+
+  function updateActiveBadge_customers(name, info) {
+    var existing = document.getElementById('pd-active-customers');
+    var html = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
+      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+      + '</div>';
+    if (existing) { existing.outerHTML = html; }
+    else {
+      var picker = document.getElementById('pd-picker-customers');
+      if (picker) picker.insertAdjacentHTML('afterend', html);
+    }
+  }
+
+  window.pdUseSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_customers();
+    if (!all[name]) return;
+    pdSetActive_customers(name);
+    var data = all[name].data;
+    if (typeof cData !== 'undefined') cData = data;
+    if(typeof checkReady==="function") checkReady();
+    updateActiveBadge_customers(name, all[name]);
+  };
+
+  window.pdDeleteSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    pdDeleteDataset_customers(name);
+    var all = pdAllDatasets_customers();
+    if (Object.keys(all).length) {
+      renderPicker(pdLoad_customers() ? pdLoad_customers().name : '');
+      pdUseSelected_customers();
+    } else {
+      location.reload();
+    }
+  };
+
+  window.pdTriggerParse_customers = function(text, name) {
+    // Parse the raw CSV text using the tool's existing parse function
+    if (typeof _pdOrigParse_customers === 'function') {
+      _pdOrigParse_customers(text);
+      // After parse, data_var is populated — save it
+      setTimeout(function() {
+        var data = (typeof cData !== 'undefined') ? cData : [];
+        if (data.length) {
+          pdSave_customers(data, name);
+          renderPicker(name);
+          updateActiveBadge_customers(name, pdAllDatasets_customers()[name]);
+          
+        }
+      }, 100);
+    }
+  };
+
+  window._pdOrigParse_customers = null; // set below after tool's function is defined
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    var active = pdLoad_customers();
+
+    if (names.length) {
+      renderPicker(active ? active.name : names[0]);
+      if (active && active.data && active.data.length) {
+        if (typeof cData !== 'undefined') cData = active.data;
+        if(typeof checkReady==="function") checkReady();
+      }
+    }
+  });
+
+})();
+
+
+/* ─── PD dataset picker: locations ─── */
+(function() {
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+    catch(e) { return ''; }
+  }
+
+  function renderPicker(ns_active) {
+    var all = pdAllDatasets_locations();
+    var names = Object.keys(all);
+    var lbl = document.getElementById('ul-l');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-locations" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    });
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-locations" style="border:1.5px solid #d97706;border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:#d97706;margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_locations()" style="flex:1;padding:5px 0;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '<button onclick="pdDeleteSelected_locations()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-locations" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-locations').addEventListener('change', function() {
+      var f = this.files[0]; if (!f) return;
+      var name = window.prompt('Name this dataset:', f.name.replace(/[.][^.]+$/, ''));
+      if (name === null) name = f.name.replace(/[.][^.]+$/, '');
+      name = name.trim() || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) { pdTriggerParse_locations(e.target.result, name); };
+      r.readAsText(f);
+    });
+
+    // Show active badge below picker
+    if (ns_active && all[ns_active]) {
+      updateActiveBadge_locations(ns_active, all[ns_active]);
+    }
+  }
+
+  function updateActiveBadge_locations(name, info) {
+    var existing = document.getElementById('pd-active-locations');
+    var html = '<div id="pd-active-locations" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
+      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+      + '</div>';
+    if (existing) { existing.outerHTML = html; }
+    else {
+      var picker = document.getElementById('pd-picker-locations');
+      if (picker) picker.insertAdjacentHTML('afterend', html);
+    }
+  }
+
+  window.pdUseSelected_locations = function() {
+    var sel = document.getElementById('pd-sel-locations');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_locations();
+    if (!all[name]) return;
+    pdSetActive_locations(name);
+    var data = all[name].data;
+    if (typeof lData !== 'undefined') lData = data;
+    if(typeof checkReady==="function") checkReady();
+    updateActiveBadge_locations(name, all[name]);
+  };
+
+  window.pdDeleteSelected_locations = function() {
+    var sel = document.getElementById('pd-sel-locations');
+    if (!sel) return;
+    var name = sel.value;
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    pdDeleteDataset_locations(name);
+    var all = pdAllDatasets_locations();
+    if (Object.keys(all).length) {
+      renderPicker(pdLoad_locations() ? pdLoad_locations().name : '');
+      pdUseSelected_locations();
+    } else {
+      location.reload();
+    }
+  };
+
+  window.pdTriggerParse_locations = function(text, name) {
+    // Parse the raw CSV text using the tool's existing parse function
+    if (typeof _pdOrigParse_locations === 'function') {
+      _pdOrigParse_locations(text);
+      // After parse, data_var is populated — save it
+      setTimeout(function() {
+        var data = (typeof lData !== 'undefined') ? lData : [];
+        if (data.length) {
+          pdSave_locations(data, name);
+          renderPicker(name);
+          updateActiveBadge_locations(name, pdAllDatasets_locations()[name]);
+          
+        }
+      }, 100);
+    }
+  };
+
+  window._pdOrigParse_locations = null; // set below after tool's function is defined
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var all = pdAllDatasets_locations();
+    var names = Object.keys(all);
+    var active = pdLoad_locations();
+
+    if (names.length) {
+      renderPicker(active ? active.name : names[0]);
+      if (active && active.data && active.data.length) {
+        if (typeof lData !== 'undefined') lData = active.data;
+        if(typeof checkReady==="function") checkReady();
+      }
+    }
+  });
+
+})();
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Restore saved datasets
-  var sc = pdLoad_customers();
-  var sl = pdLoad_locations();
-  if (sc && sc.data && sc.data.length) {
-    if (typeof cData !== 'undefined') cData = sc.data;
-    pdShowRestoredBadge_overlap('c', sc);
-    if (typeof checkReady === 'function') checkReady();
-  }
-  if (sl && sl.data && sl.data.length) {
-    if (typeof lData !== 'undefined') lData = sl.data;
-    pdShowRestoredBadge_overlap('l', sl);
-    if (typeof checkReady === 'function') checkReady();
-  }
-
-  // Wrap parseCSV to save after upload
   if (typeof parseCSV === 'function') {
-    var _orig = parseCSV;
+    _pdOrigParse_customers = parseCSV;
+    _pdOrigParse_locations = parseCSV;
     parseCSV = function(text, ds) {
-      _orig(text, ds);
-      if (ds === 'c' && typeof cData !== 'undefined' && cData.length > 0) pdSave_customers(cData);
-      if (ds === 'l' && typeof lData !== 'undefined' && lData.length > 0) pdSave_locations(lData);
+      _pdOrigParse_customers(text, ds);
+      setTimeout(function() {
+        if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {
+          var name = window.prompt('Name this dataset:', 'Customers');
+          if (name === null) name = 'Customers';
+          pdSave_customers(cData, name.trim() || 'Customers');
+        }
+        if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {
+          var name = window.prompt('Name this dataset:', 'Locations');
+          if (name === null) name = 'Locations';
+          pdSave_locations(lData, name.trim() || 'Locations');
+        }
+      }, 100);
     };
   }
 });

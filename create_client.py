@@ -136,53 +136,53 @@ def pin_gate_script(pin, slug):
 </script>"""
 
 
-# ── localStorage snippet ───────────────────────────────────────────────────────
+# ── Multi-dataset storage system ───────────────────────────────────────────────
 
-def storage_head_script(slug, dataset='customers'):
-    """Returns a <script> block to inject in <head> with localStorage helpers."""
-    key = f'geo_pd_{slug}_{dataset}'
+def storage_head_script(slug, ns='customers'):
+    """
+    Shared localStorage helpers for named dataset management.
+    Supports multiple named datasets per tool with a selector UI.
+    ns = namespace suffix, e.g. 'customers' or 'locations'
+    """
+    ds_key    = f'geo_pd_{slug}_{ns}_datasets'
+    act_key   = f'geo_pd_{slug}_{ns}_active'
     return f"""
 <script>
-/* ── Pratt Digital client storage ({dataset}) ── */
+/* ── Pratt Digital multi-dataset storage: {ns} ── */
 (function() {{
-  window.PD_KEY_{dataset.upper()} = '{key}';
-  window.pdSave_{dataset} = function(data) {{
-    try {{
-      localStorage.setItem('{key}', JSON.stringify({{
-        data: data,
-        savedAt: new Date().toISOString(),
-        count: data.length
-      }}));
-    }} catch(e) {{}}
+  var DS_KEY  = '{ds_key}';
+  var ACT_KEY = '{act_key}';
+
+  function _all()  {{ try {{ return JSON.parse(localStorage.getItem(DS_KEY)||'{{}}'); }} catch(e) {{ return {{}}; }} }}
+  function _save(o) {{ try {{ localStorage.setItem(DS_KEY, JSON.stringify(o)); }} catch(e) {{}} }}
+
+  window.pdSave_{ns} = function(data, name) {{
+    var all = _all();
+    name = name || 'Dataset ' + (Object.keys(all).length + 1);
+    all[name] = {{ data: data, count: data.length, savedAt: new Date().toISOString() }};
+    _save(all);
+    localStorage.setItem(ACT_KEY, name);
   }};
-  window.pdLoad_{dataset} = function() {{
-    try {{
-      var s = localStorage.getItem('{key}');
-      if (!s) return null;
-      var obj = JSON.parse(s);
-      return obj && obj.data && obj.data.length ? obj : null;
-    }} catch(e) {{ return null; }}
+  window.pdLoad_{ns} = function() {{
+    var all = _all(), keys = Object.keys(all);
+    if (!keys.length) return null;
+    var name = localStorage.getItem(ACT_KEY);
+    if (!name || !all[name]) name = keys[0];
+    return Object.assign({{ name: name }}, all[name]);
   }};
-  window.pdSavedAt_{dataset} = function() {{
-    try {{
-      var s = localStorage.getItem('{key}');
-      if (!s) return null;
-      return JSON.parse(s).savedAt || null;
-    }} catch(e) {{ return null; }}
+  window.pdAllDatasets_{ns} = function() {{ return _all(); }};
+  window.pdSetActive_{ns} = function(name) {{ localStorage.setItem(ACT_KEY, name); }};
+  window.pdDeleteDataset_{ns} = function(name) {{
+    var all = _all(); delete all[name]; _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
   }};
-  window.pdClear_{dataset} = function() {{
-    localStorage.removeItem('{key}');
+  window.pdClear_{ns} = function() {{
+    localStorage.removeItem(DS_KEY);
+    localStorage.removeItem(ACT_KEY);
   }};
 }})();
 </script>"""
-
-
-def saved_badge_html(dataset='customers', color='#16a34a'):
-    """Returns HTML for the "loaded from storage" badge with an Update button."""
-    return f"""<div id="pd-storage-badge-{dataset}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;background:rgba(22,163,74,0.07);font-size:12px;">
-  <div style="font-weight:600;color:{color}">✓ <span id="pd-badge-count-{dataset}"></span> saved</div>
-  <div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-badge-date-{dataset}"></span> · <a href="#" onclick="pdClearAndReload_{dataset}();return false;" style="color:{color}">Upload new list</a></div>
-</div>"""
 
 
 def inject_before_body_end(html, script):
@@ -190,257 +190,296 @@ def inject_before_body_end(html, script):
     parts = html.rsplit('</body>', 1)
     if len(parts) == 2:
         return parts[0] + script + '\n</body>' + parts[1]
-    return html + script  # no </body> found — append
+    return html + script
 
 
-# ── Per-tool patchers ──────────────────────────────────────────────────────────
-# Strategy: inject storage helpers in <head>, then append a single <script>
-# block before </body> that wraps the tool's parse function and handles restore.
-# This avoids fragile regex injection into function bodies.
+# ── Shared dataset picker UI ───────────────────────────────────────────────────
 
-def _badge_js(dataset='customers', color='#16a34a', label_id='uploadLabel', extra_js=''):
-    """Returns JS that shows the restored-data badge and wires up the clear link."""
+def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
+                      data_var='customerData', on_load_extra='', on_save_extra=''):
+    """
+    Returns JS that:
+    1. On DOMContentLoaded: if saved datasets exist, replaces the upload label
+       with a dropdown picker + active dataset badge.
+    2. Wraps the parse function to prompt for a dataset name on upload, then save.
+    3. Allows switching between saved datasets via dropdown.
+    """
     return f"""
-function pdShowRestoredBadge_{dataset}(saved) {{
-  var lbl = document.getElementById('{label_id}');
-  if (!lbl) return;
-  lbl.outerHTML = '<div id="pd-badge-{dataset}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
-    + '<div style="font-weight:600;color:{color}">\\u2713 <span id="pd-bc-{dataset}"></span> saved</div>'
-    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-{dataset}"></span>'
-    + ' &middot; <a href="#" onclick="pdClearAndReload_{dataset}();return false;" style="color:{color}">Upload new list</a></div>'
-    + '</div>';
-  var c = document.getElementById('pd-bc-{dataset}');
-  var d = document.getElementById('pd-bd-{dataset}');
-  if (c) c.textContent = (saved.count || saved.data && saved.data.length || 0) + ' customers';
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-  {extra_js}
-}}
-function pdClearAndReload_{dataset}() {{
-  pdClear_{dataset}();
-  location.reload();
-}}"""
+/* ─── PD dataset picker: {ns} ─── */
+(function() {{
+
+  function fmtDate(s) {{
+    try {{ return new Date(s).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}}); }}
+    catch(e) {{ return ''; }}
+  }}
+
+  function renderPicker(ns_active) {{
+    var all = pdAllDatasets_{ns}();
+    var names = Object.keys(all);
+    var lbl = document.getElementById('{label_id}');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-{ns}" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {{
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    }});
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-{ns}" style="border:1.5px solid {color};border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:{color};margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_{ns}()" style="flex:1;padding:5px 0;background:{color};color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '<button onclick="pdDeleteSelected_{ns}()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-{ns}" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-{ns}').addEventListener('change', function() {{
+      var f = this.files[0]; if (!f) return;
+      var name = window.prompt('Name this dataset:', f.name.replace(/[.][^.]+$/, ''));
+      if (name === null) name = f.name.replace(/[.][^.]+$/, '');
+      name = name.trim() || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) {{ pdTriggerParse_{ns}(e.target.result, name); }};
+      r.readAsText(f);
+    }});
+
+    // Show active badge below picker
+    if (ns_active && all[ns_active]) {{
+      updateActiveBadge_{ns}(ns_active, all[ns_active]);
+    }}
+  }}
+
+  function updateActiveBadge_{ns}(name, info) {{
+    var existing = document.getElementById('pd-active-{ns}');
+    var html = '<div id="pd-active-{ns}" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
+      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+      + '</div>';
+    if (existing) {{ existing.outerHTML = html; }}
+    else {{
+      var picker = document.getElementById('pd-picker-{ns}');
+      if (picker) picker.insertAdjacentHTML('afterend', html);
+    }}
+  }}
+
+  window.pdUseSelected_{ns} = function() {{
+    var sel = document.getElementById('pd-sel-{ns}');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_{ns}();
+    if (!all[name]) return;
+    pdSetActive_{ns}(name);
+    var data = all[name].data;
+    if (typeof {data_var} !== 'undefined') {data_var} = data;
+    {on_load_extra}
+    updateActiveBadge_{ns}(name, all[name]);
+  }};
+
+  window.pdDeleteSelected_{ns} = function() {{
+    var sel = document.getElementById('pd-sel-{ns}');
+    if (!sel) return;
+    var name = sel.value;
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    pdDeleteDataset_{ns}(name);
+    var all = pdAllDatasets_{ns}();
+    if (Object.keys(all).length) {{
+      renderPicker(pdLoad_{ns}() ? pdLoad_{ns}().name : '');
+      pdUseSelected_{ns}();
+    }} else {{
+      location.reload();
+    }}
+  }};
+
+  window.pdTriggerParse_{ns} = function(text, name) {{
+    // Parse the raw CSV text using the tool's existing parse function
+    if (typeof _pdOrigParse_{ns} === 'function') {{
+      _pdOrigParse_{ns}(text);
+      // After parse, data_var is populated — save it
+      setTimeout(function() {{
+        var data = (typeof {data_var} !== 'undefined') ? {data_var} : [];
+        if (data.length) {{
+          pdSave_{ns}(data, name);
+          renderPicker(name);
+          updateActiveBadge_{ns}(name, pdAllDatasets_{ns}()[name]);
+          {on_save_extra}
+        }}
+      }}, 100);
+    }}
+  }};
+
+  window._pdOrigParse_{ns} = null; // set below after tool's function is defined
+
+  document.addEventListener('DOMContentLoaded', function() {{
+    var all = pdAllDatasets_{ns}();
+    var names = Object.keys(all);
+    var active = pdLoad_{ns}();
+
+    if (names.length) {{
+      renderPicker(active ? active.name : names[0]);
+      if (active && active.data && active.data.length) {{
+        if (typeof {data_var} !== 'undefined') {data_var} = active.data;
+        {on_load_extra}
+      }}
+    }}
+  }});
+
+}})();
+"""
+
+
+def _standard_patcher(html, slug, parse_fn, data_var='customerData',
+                       ns='customers', color='#16a34a', on_load_extra='', on_save_extra=''):
+    """Common patcher for tools that use a named parse function + customerData array."""
+    html = html.replace('</head>', storage_head_script(slug, ns) + '\n</head>', 1)
+    picker = dataset_picker_js(ns=ns, color=color, label_id='uploadLabel',
+                                data_var=data_var, on_load_extra=on_load_extra,
+                                on_save_extra=on_save_extra)
+    body_script = f"""
+<script>
+{picker}
+document.addEventListener('DOMContentLoaded', function() {{
+  // Wire up the tool's parse function to the dataset picker
+  if (typeof {parse_fn} === 'function') {{
+    _pdOrigParse_{ns} = {parse_fn};
+    {parse_fn} = function(text) {{
+      _pdOrigParse_{ns}(text);
+    }};
+  }}
+}});
+</script>"""
+    return inject_before_body_end(html, body_script)
 
 
 def patch_local_coverage(html, slug):
-    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
-
-    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel', extra_js='if(typeof checkReady==="function") checkReady();')
-    body_script = f"""
-<script>
-/* ── PD client persistence: local-coverage ── */
-{badge_js}
-
-document.addEventListener('DOMContentLoaded', function() {{
-  // Restore saved postcodes
-  var saved = pdLoad_customers();
-  if (saved && saved.data && saved.data.length) {{
-    customerData = saved.data;
-    pdShowRestoredBadge_customers(saved);
-  }}
-
-  // Wrap parseCustomers to save after every upload
-  if (typeof parseCustomers === 'function') {{
-    var _orig = parseCustomers;
-    parseCustomers = function(text) {{
-      _orig(text);
-      if (customerData && customerData.length > 0) {{
-        pdSave_customers(customerData);
-      }}
-    }};
-  }}
-}});
-</script>"""
-    html = inject_before_body_end(html, body_script)
-    return html
+    return _standard_patcher(html, slug, 'parseCustomers',
+        on_load_extra='if(typeof checkReady==="function") checkReady();',
+        on_save_extra='if(typeof checkReady==="function") checkReady();')
 
 
 def patch_dwelling_explorer(html, slug):
-    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
-
-    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel',
-        extra_js='var btn=document.getElementById("analyseBtn");if(btn)btn.style.display="";')
-    body_script = f"""
-<script>
-/* ── PD client persistence: dwelling-explorer ── */
-{badge_js}
-
-document.addEventListener('DOMContentLoaded', function() {{
-  var saved = pdLoad_customers();
-  if (saved && saved.data && saved.data.length) {{
-    customerData = saved.data;
-    pdShowRestoredBadge_customers(saved);
-  }}
-
-  if (typeof parseCustomers === 'function') {{
-    var _orig = parseCustomers;
-    parseCustomers = function(text) {{
-      _orig(text);
-      if (customerData && customerData.length > 0) {{
-        pdSave_customers(customerData);
-      }}
-    }};
-  }}
-}});
-</script>"""
-    html = inject_before_body_end(html, body_script)
-    return html
+    return _standard_patcher(html, slug, 'parseCustomers',
+        on_load_extra=('var btn=document.getElementById("analyseBtn");'
+                       'if(btn)btn.style.display="";'))
 
 
 def patch_customer_map(html, slug):
-    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
+    return _standard_patcher(html, slug, 'parseCSV',
+        on_load_extra='if(typeof checkReady==="function") checkReady();',
+        on_save_extra='if(typeof checkReady==="function") checkReady();')
 
-    badge_js = _badge_js('customers', '#16a34a', 'uploadLabel',
-        extra_js='if(typeof checkReady==="function") checkReady();')
-    body_script = f"""
-<script>
-/* ── PD client persistence: customer-map ── */
-{badge_js}
 
-document.addEventListener('DOMContentLoaded', function() {{
-  var saved = pdLoad_customers();
-  if (saved && saved.data && saved.data.length) {{
-    customerData = saved.data;
-    pdShowRestoredBadge_customers(saved);
-    if (typeof checkReady === 'function') checkReady();
-  }}
-
-  if (typeof parseCSV === 'function') {{
-    var _orig = parseCSV;
-    parseCSV = function(text) {{
-      _orig(text);
-      if (customerData && customerData.length > 0) {{
-        pdSave_customers(customerData);
-      }}
-    }};
-  }}
-}});
-</script>"""
-    html = inject_before_body_end(html, body_script)
-    return html
+def patch_profile_tool_html(html, slug):
+    """Profile-tool: parseCSV is in app.js; rawData is the data variable."""
+    return _standard_patcher(html, slug, 'parseCSV', data_var='rawData',
+        color='#7c3aed',
+        on_load_extra='if(typeof checkReady==="function") checkReady();',
+        on_save_extra='if(typeof checkReady==="function") checkReady();')
 
 
 def patch_hnw_finder(html, slug):
-    # hnw-finder loads text into #pasteArea, not directly into customerData
-    # Persist the raw textarea text instead
-    key = f'geo_pd_{slug}_hnw_text'
-    head_script = f"""
-<script>
-(function() {{
-  window.pdSaveHnw = function(text) {{
-    try {{ localStorage.setItem('{key}', JSON.stringify({{text:text,savedAt:new Date().toISOString()}})); }} catch(e) {{}}
-  }};
-  window.pdLoadHnw = function() {{
-    try {{ var s=localStorage.getItem('{key}'); return s?JSON.parse(s):null; }} catch(e) {{ return null; }}
-  }};
-  window.pdClearHnw = function() {{ localStorage.removeItem('{key}'); }};
-}})();
-</script>"""
-    html = html.replace('</head>', head_script + '\n</head>', 1)
+    """HNW finder: uploads go into pasteArea textarea, not parsed to an array."""
+    html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
-    badge_js = _badge_js('customers', '#7c3aed', 'uploadLabel',
-        extra_js='if(typeof checkReady==="function") checkReady();')
+    picker = dataset_picker_js(
+        ns='customers', color='#7c3aed', label_id='uploadLabel',
+        data_var='customerData',
+        on_load_extra=(
+            'var pa=document.getElementById("pasteArea");'
+            'if(pa&&active&&active.rawText){pa.value=active.rawText;}'
+            'if(typeof checkReady==="function") checkReady();'
+        )
+    )
     body_script = f"""
 <script>
-/* ── PD client persistence: hnw-finder ── */
-{badge_js}
+{picker}
+
+// HNW uses textarea — override pdTriggerParse_customers for text passthrough
+window.pdTriggerParse_customers = function(text, name) {{
+  var all = pdAllDatasets_customers();
+  // Count lines as postcodes
+  var lines = text.trim().split('\\n').filter(function(l){{return l.trim();}});
+  var fakeData = lines; // store raw lines as "data" for count purposes
+  pdSave_customers(fakeData, name);
+  // Also store raw text alongside
+  try {{
+    var stored = JSON.parse(localStorage.getItem('geo_pd_{slug}_customers_datasets')||'{{}}');
+    if (stored[name]) {{ stored[name].rawText = text; localStorage.setItem('geo_pd_{slug}_customers_datasets', JSON.stringify(stored)); }}
+  }} catch(e) {{}}
+  // Fill the pasteArea
+  var pa = document.getElementById('pasteArea');
+  if (pa) {{ pa.value = text; if(typeof checkReady==='function') checkReady(); }}
+  // Re-render picker
+  var all2 = pdAllDatasets_customers();
+  setTimeout(function() {{
+    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
+    location.reload(); // simplest — picker will restore on reload
+  }}, 200);
+}};
 
 document.addEventListener('DOMContentLoaded', function() {{
-  // Restore: pre-fill pasteArea
-  var saved = pdLoadHnw();
-  if (saved && saved.text) {{
-    var pa = document.getElementById('pasteArea');
-    if (pa) {{
-      pa.value = saved.text;
-      if (typeof checkReady === 'function') checkReady();
-    }}
-    var lines = saved.text.trim().split('\\n').filter(function(l){{return l.trim();}}).length;
-    var fakeCount = {{count: lines, savedAt: saved.savedAt, data:[]}};
-    pdShowRestoredBadge_customers(fakeCount);
-    var c = document.getElementById('pd-bc-customers');
-    if (c) c.textContent = lines + ' postcodes';
-  }}
-
-  // Save on file upload
-  var fi = document.getElementById('fileInput');
-  if (fi) {{
-    fi.addEventListener('change', function() {{
-      var f = fi.files[0]; if (!f) return;
-      var r = new FileReader();
-      r.onload = function(e) {{ pdSaveHnw(e.target.result); }};
-      r.readAsText(f);
-    }});
-  }}
-
-  // Save on textarea input
-  var pa = document.getElementById('pasteArea');
-  if (pa) {{
-    pa.addEventListener('input', function() {{
-      pdSaveHnw(pa.value);
-    }});
+  var active = pdLoad_customers();
+  if (active) {{
+    // Restore raw text into pasteArea
+    try {{
+      var stored = JSON.parse(localStorage.getItem('geo_pd_{slug}_customers_datasets')||'{{}}');
+      var entry = stored[active.name];
+      if (entry && entry.rawText) {{
+        var pa = document.getElementById('pasteArea');
+        if (pa) {{ pa.value = entry.rawText; if(typeof checkReady==='function') checkReady(); }}
+      }}
+    }} catch(e) {{}}
   }}
 }});
-
-function pdClearAndReload_customers() {{ pdClearHnw(); location.reload(); }}
 </script>"""
-    html = inject_before_body_end(html, body_script)
-    return html
+    return inject_before_body_end(html, body_script)
 
 
 def patch_overlap_map(html, slug):
-    head_c = storage_head_script(slug, 'customers')
-    head_l = storage_head_script(slug, 'locations')
-    html = html.replace('</head>', head_c + head_l + '\n</head>', 1)
+    html = html.replace('</head>',
+        storage_head_script(slug, 'customers') + storage_head_script(slug, 'locations') + '\n</head>', 1)
+
+    picker_c = dataset_picker_js(ns='customers', color='#4f46e5', label_id='ul-c',
+        data_var='cData',
+        on_load_extra='if(typeof checkReady==="function") checkReady();')
+    picker_l = dataset_picker_js(ns='locations', color='#d97706', label_id='ul-l',
+        data_var='lData',
+        on_load_extra='if(typeof checkReady==="function") checkReady();')
 
     body_script = f"""
 <script>
-/* ── PD client persistence: overlap-map ── */
-function pdShowRestoredBadge_overlap(ds, saved) {{
-  var color = ds === 'c' ? '#4f46e5' : '#d97706';
-  var labelId = ds === 'c' ? 'ul-c' : 'ul-l';
-  var dataset = ds === 'c' ? 'customers' : 'locations';
-  var lbl = document.getElementById(labelId);
-  if (!lbl) return;
-  lbl.outerHTML = '<div id="pd-badge-' + dataset + '" style="border:1.5px solid ' + color + ';border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.04);font-size:12px">'
-    + '<div style="font-weight:600;color:' + color + '">\\u2713 <span id="pd-bc-' + dataset + '"></span> saved</div>'
-    + '<div style="color:#666;font-size:11px;margin-top:2px"><span id="pd-bd-' + dataset + '"></span>'
-    + ' &middot; <a href="#" onclick="pdClearAndReload_' + dataset + '();return false;" style="color:' + color + '">Upload new list</a></div>'
-    + '</div>';
-  var c = document.getElementById('pd-bc-' + dataset);
-  var d = document.getElementById('pd-bd-' + dataset);
-  if (c) c.textContent = (saved.count||0) + (ds==='c'?' customers':' locations');
-  if (d && saved.savedAt) d.textContent = 'Saved ' + new Date(saved.savedAt).toLocaleDateString('en-GB',{{day:'numeric',month:'short'}});
-}}
-function pdClearAndReload_customers() {{ pdClear_customers(); location.reload(); }}
-function pdClearAndReload_locations() {{ pdClear_locations(); location.reload(); }}
-
+{picker_c}
+{picker_l}
 document.addEventListener('DOMContentLoaded', function() {{
-  // Restore saved datasets
-  var sc = pdLoad_customers();
-  var sl = pdLoad_locations();
-  if (sc && sc.data && sc.data.length) {{
-    if (typeof cData !== 'undefined') cData = sc.data;
-    pdShowRestoredBadge_overlap('c', sc);
-    if (typeof checkReady === 'function') checkReady();
-  }}
-  if (sl && sl.data && sl.data.length) {{
-    if (typeof lData !== 'undefined') lData = sl.data;
-    pdShowRestoredBadge_overlap('l', sl);
-    if (typeof checkReady === 'function') checkReady();
-  }}
-
-  // Wrap parseCSV to save after upload
   if (typeof parseCSV === 'function') {{
-    var _orig = parseCSV;
+    _pdOrigParse_customers = parseCSV;
+    _pdOrigParse_locations = parseCSV;
     parseCSV = function(text, ds) {{
-      _orig(text, ds);
-      if (ds === 'c' && typeof cData !== 'undefined' && cData.length > 0) pdSave_customers(cData);
-      if (ds === 'l' && typeof lData !== 'undefined' && lData.length > 0) pdSave_locations(lData);
+      _pdOrigParse_customers(text, ds);
+      setTimeout(function() {{
+        if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {{
+          var name = window.prompt('Name this dataset:', 'Customers');
+          if (name === null) name = 'Customers';
+          pdSave_customers(cData, name.trim() || 'Customers');
+        }}
+        if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {{
+          var name = window.prompt('Name this dataset:', 'Locations');
+          if (name === null) name = 'Locations';
+          pdSave_locations(lData, name.trim() || 'Locations');
+        }}
+      }}, 100);
     }};
   }}
 }});
 </script>"""
-    html = inject_before_body_end(html, body_script)
-    return html
+    return inject_before_body_end(html, body_script)
 
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
@@ -457,6 +496,8 @@ def get_patcher(filename, slug):
         return lambda h: patch_hnw_finder(h, slug)
     if name == 'overlap-map.html':
         return lambda h: patch_overlap_map(h, slug)
+    if name == 'profile-tool.html':
+        return lambda h: patch_profile_tool_html(h, slug)
     return None
 
 
