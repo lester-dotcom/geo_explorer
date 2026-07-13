@@ -1386,6 +1386,7 @@ function loadSample(ds) {
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {
         if (typeof cData !== 'undefined') cData = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
         if(typeof checkReady==="function") checkReady();
       }
     }
@@ -1514,6 +1515,7 @@ function loadSample(ds) {
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {
         if (typeof lData !== 'undefined') lData = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
         if(typeof checkReady==="function") checkReady();
       }
     }

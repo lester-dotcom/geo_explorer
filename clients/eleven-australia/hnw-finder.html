@@ -930,7 +930,7 @@ if (typeof HNW_DATA === 'undefined') {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof customerData !== 'undefined') customerData = data;
-    var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry&&_entry.rawText){_pa.value=_entry.rawText;_pa.dispatchEvent(new Event("input"));}if(typeof checkReady==="function") checkReady();
+    var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _raw=_entry.rawText||(_entry.data&&_entry.data.length?_entry.data.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -975,7 +975,8 @@ if (typeof HNW_DATA === 'undefined') {
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
-        var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry&&_entry.rawText){_pa.value=_entry.rawText;_pa.dispatchEvent(new Event("input"));}if(typeof checkReady==="function") checkReady();
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
+        var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _raw=_entry.rawText||(_entry.data&&_entry.data.length?_entry.data.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
       }
     }
   });
@@ -1005,31 +1006,47 @@ window.pdTriggerParse_customers = function(text, name) {
   }
   // Re-render picker with the new dataset
   if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
-  var all = pdAllDatasets_customers();
-  if (all[name]) {
+  var all2 = pdAllDatasets_customers();
+  if (all2[name]) {
     var existing = document.getElementById('pd-active-customers');
-    var info = all[name];
+    var info = all2[name];
     var badge = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
       + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records</div>';
     if (existing) existing.outerHTML = badge;
     else {
-      var picker = document.getElementById('pd-picker-customers');
-      if (picker) picker.insertAdjacentHTML('afterend', badge);
+      var pickerEl = document.getElementById('pd-picker-customers');
+      if (pickerEl) pickerEl.insertAdjacentHTML('afterend', badge);
     }
   }
 };
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Restore raw text from active dataset into pasteArea on page load
+  // Intercept original fileInput (shown before picker exists) so first upload is persisted
+  var origFi = document.getElementById('fileInput');
+  if (origFi) {
+    origFi.addEventListener('change', function() {
+      if (!this.files[0]) return;
+      var fname = this.files[0].name.replace(/[.][^.]+$/, '') || 'Customers';
+      // Wait for original handler to fill pasteArea, then save
+      setTimeout(function() {
+        var pa = document.getElementById('pasteArea');
+        var text = pa ? pa.value : '';
+        if (text) pdTriggerParse_customers(text, fname);
+      }, 200);
+    });
+  }
+
+  // Restore content into pasteArea on page load
   var active = pdLoad_customers();
   if (active) {
     try {
       var stored = JSON.parse(localStorage.getItem('geo_pd_eleven-australia_customers_datasets')||'{}');
       var entry = stored[active.name];
-      if (entry && entry.rawText) {
+      if (entry) {
+        var rawText = entry.rawText || (entry.data && entry.data.length ? entry.data.join('\n') : '');
         var pa = document.getElementById('pasteArea');
-        if (pa) {
-          pa.value = entry.rawText;
+        if (pa && rawText) {
+          pa.value = rawText;
           pa.dispatchEvent(new Event('input'));
           if (typeof checkReady === 'function') checkReady();
         }

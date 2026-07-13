@@ -907,21 +907,32 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTool();
     catch(e) { return ''; }
   }
 
-  // Extract UK postcodes from raw CSV/text
+  // Normalise a potential postcode string (same logic as the tools)
+  function normalisePC(s) {
+    if (!s) return null;
+    var c = s.replace(/\s+/g,'').toUpperCase();
+    if (c.length >= 5 && c.length <= 7) return c.slice(0,-3) + ' ' + c.slice(-3);
+    return null;
+  }
+
+  // Extract postcodes from raw CSV/text, matching the tools' parseCustomers behaviour:
+  // one postcode per row, duplicates kept (multiple customers at same postcode = real data),
+  // header row skipped, normalisePC fallback on last/first cell.
   function extractPostcodes(text) {
-    var re = /[A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2}/gi;
-    var seen = {};
+    var lines = text.replace(/\r/g,'').trim().split('\n').filter(function(l){return l.trim();});
     var results = [];
-    var m;
-    // Also try extracting anything postcode-like from each field
-    text.replace(/\r/g,'').split('\n').forEach(function(line) {
-      // Try full UK postcode matches
-      while ((m = re.exec(line)) !== null) {
-        var pc = m[0].replace(/\s+/g,' ').trim().toUpperCase();
-        if (!seen[pc]) { seen[pc] = 1; results.push(pc); }
+    var isHdr = function(l) { return /postcode|address|name|customer|email/i.test(l); };
+    var start = lines.length && isHdr(lines[0]) ? 1 : 0;
+    for (var i = start; i < lines.length; i++) {
+      var parts = lines[i].split(',').map(function(s){return s.trim().replace(/^["']|["']$/g,'');});
+      var pc = null;
+      for (var j = 0; j < parts.length; j++) {
+        var m = parts[j].match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
+        if (m) { pc = normalisePC(m[1]); if (pc) break; }
       }
-      re.lastIndex = 0;
-    });
+      if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
+      if (pc) results.push(pc);
+    }
     return results;
   }
 

@@ -330,6 +330,7 @@ def dataset_picker_js(ns='customers', color='#16a34a', label_id='uploadLabel',
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {{
         if (typeof {data_var} !== 'undefined') {data_var} = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
         {on_load_extra}
       }}
     }}
@@ -404,14 +405,17 @@ def patch_hnw_finder(html, slug):
     """HNW finder: uploads go into pasteArea textarea, not parsed to an array."""
     html = html.replace('</head>', storage_head_script(slug) + '\n</head>', 1)
 
-    # on_load_extra runs inside pdUseSelected_customers where `name` and `all` are in scope
-    # (NOT inside DOMContentLoaded, so `active` is NOT available — use all[name] instead)
+    # on_load_extra runs in both pdUseSelected_customers and DOMContentLoaded.
+    # Both have `name` and `all` in scope (DOMContentLoaded now defines `var name = active.name`).
+    # If rawText is absent (e.g. uploaded via the launcher data manager), fall back to
+    # reconstructing the text from the stored postcodes array (one per line) — HNW's
+    # parseInput() handles that format just fine.
     on_load_extra = (
         'var _pa=document.getElementById("pasteArea");'
         'var _entry=all[name];'
-        'if(_pa&&_entry&&_entry.rawText){'
-        '_pa.value=_entry.rawText;'
-        '_pa.dispatchEvent(new Event("input"));'
+        'if(_pa&&_entry){'
+        '  var _raw=_entry.rawText||(_entry.data&&_entry.data.length?_entry.data.join("\\n"):"");'
+        '  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}'
         '}'
         'if(typeof checkReady==="function") checkReady();'
     )
@@ -450,31 +454,47 @@ window.pdTriggerParse_customers = function(text, name) {{
   }}
   // Re-render picker with the new dataset
   if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
-  var all = pdAllDatasets_customers();
-  if (all[name]) {{
+  var all2 = pdAllDatasets_customers();
+  if (all2[name]) {{
     var existing = document.getElementById('pd-active-customers');
-    var info = all[name];
+    var info = all2[name];
     var badge = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
       + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records</div>';
     if (existing) existing.outerHTML = badge;
     else {{
-      var picker = document.getElementById('pd-picker-customers');
-      if (picker) picker.insertAdjacentHTML('afterend', badge);
+      var pickerEl = document.getElementById('pd-picker-customers');
+      if (pickerEl) pickerEl.insertAdjacentHTML('afterend', badge);
     }}
   }}
 }};
 
 document.addEventListener('DOMContentLoaded', function() {{
-  // Restore raw text from active dataset into pasteArea on page load
+  // Intercept original fileInput (shown before picker exists) so first upload is persisted
+  var origFi = document.getElementById('fileInput');
+  if (origFi) {{
+    origFi.addEventListener('change', function() {{
+      if (!this.files[0]) return;
+      var fname = this.files[0].name.replace(/[.][^.]+$/, '') || 'Customers';
+      // Wait for original handler to fill pasteArea, then save
+      setTimeout(function() {{
+        var pa = document.getElementById('pasteArea');
+        var text = pa ? pa.value : '';
+        if (text) pdTriggerParse_customers(text, fname);
+      }}, 200);
+    }});
+  }}
+
+  // Restore content into pasteArea on page load
   var active = pdLoad_customers();
   if (active) {{
     try {{
       var stored = JSON.parse(localStorage.getItem('{ds_key}')||'{{}}');
       var entry = stored[active.name];
-      if (entry && entry.rawText) {{
+      if (entry) {{
+        var rawText = entry.rawText || (entry.data && entry.data.length ? entry.data.join('\\n') : '');
         var pa = document.getElementById('pasteArea');
-        if (pa) {{
-          pa.value = entry.rawText;
+        if (pa && rawText) {{
+          pa.value = rawText;
           pa.dispatchEvent(new Event('input'));
           if (typeof checkReady === 'function') checkReady();
         }}
@@ -565,21 +585,32 @@ def patch_launcher(html, slug):
     catch(e) {{ return ''; }}
   }}
 
-  // Extract UK postcodes from raw CSV/text
+  // Normalise a potential postcode string (same logic as the tools)
+  function normalisePC(s) {{
+    if (!s) return null;
+    var c = s.replace(/\\s+/g,'').toUpperCase();
+    if (c.length >= 5 && c.length <= 7) return c.slice(0,-3) + ' ' + c.slice(-3);
+    return null;
+  }}
+
+  // Extract postcodes from raw CSV/text, matching the tools' parseCustomers behaviour:
+  // one postcode per row, duplicates kept (multiple customers at same postcode = real data),
+  // header row skipped, normalisePC fallback on last/first cell.
   function extractPostcodes(text) {{
-    var re = /[A-Z]{{1,2}}[0-9][0-9A-Z]?\\s*[0-9][A-Z]{{2}}/gi;
-    var seen = {{}};
+    var lines = text.replace(/\\r/g,'').trim().split('\\n').filter(function(l){{return l.trim();}});
     var results = [];
-    var m;
-    // Also try extracting anything postcode-like from each field
-    text.replace(/\\r/g,'').split('\\n').forEach(function(line) {{
-      // Try full UK postcode matches
-      while ((m = re.exec(line)) !== null) {{
-        var pc = m[0].replace(/\\s+/g,' ').trim().toUpperCase();
-        if (!seen[pc]) {{ seen[pc] = 1; results.push(pc); }}
+    var isHdr = function(l) {{ return /postcode|address|name|customer|email/i.test(l); }};
+    var start = lines.length && isHdr(lines[0]) ? 1 : 0;
+    for (var i = start; i < lines.length; i++) {{
+      var parts = lines[i].split(',').map(function(s){{return s.trim().replace(/^["']|["']$/g,'');}});
+      var pc = null;
+      for (var j = 0; j < parts.length; j++) {{
+        var m = parts[j].match(/([A-Z]{{1,2}}\\d{{1,2}}[A-Z]?\\s*\\d[A-Z]{{2}})/i);
+        if (m) {{ pc = normalisePC(m[1]); if (pc) break; }}
       }}
-      re.lastIndex = 0;
-    }});
+      if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
+      if (pc) results.push(pc);
+    }}
     return results;
   }}
 

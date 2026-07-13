@@ -1045,6 +1045,7 @@ buildLayer(currentMode);
       renderPicker(active ? active.name : names[0]);
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
         var btn=document.getElementById("analyseBtn");if(btn)btn.style.display="";
       }
     }
