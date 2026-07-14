@@ -223,46 +223,6 @@ textarea::placeholder { color: var(--muted); }
   };
 })();
 </script>
-<script>
-/* ── Pratt Digital multi-dataset storage: locations ── */
-(function() {
-  var DS_KEY  = 'geo_pd_eleven-australia_locations_datasets';
-  var ACT_KEY = 'geo_pd_eleven-australia_locations_active';
-
-  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
-  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
-
-  window.pdSave_locations = function(data, name) {
-    var all = _all();
-    name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
-    _save(all);
-    localStorage.setItem(ACT_KEY, name);
-  };
-  window.pdLoad_locations = function() {
-    var all = _all(), keys = Object.keys(all);
-    if (!keys.length) return null;
-    var name = localStorage.getItem(ACT_KEY);
-    if (!name || !all[name]) name = keys[0];
-    return Object.assign({ name: name }, all[name]);
-  };
-  window.pdAllDatasets_locations = function() { return _all(); };
-  window.pdSetActive_locations   = function(name) { localStorage.setItem(ACT_KEY, name); };
-  window.pdDeleteDataset_locations = function(name) {
-    var all = _all(); delete all[name]; _save(all);
-    var keys = Object.keys(all);
-    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
-  };
-  window.pdClear_locations = function() {
-    localStorage.removeItem(DS_KEY);
-    localStorage.removeItem(ACT_KEY);
-  };
-  window.pdRawGet_locations = function(name) {
-    var all = _all();
-    return all[name] || null;
-  };
-})();
-</script>
 </head>
 <body>
 <header>
@@ -1395,18 +1355,35 @@ function loadSample(ds) {
 })();
 
 
-/* ─── PD dataset picker: locations ─── */
+/* ─── PD dataset picker: Dataset 2 (locations slot, shared customers namespace) ─── */
 (function() {
+  var LOC_ACT_KEY = 'geo_pd_eleven-australia_locations_active';
 
   function fmtDate(s) {
     try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
     catch(e) { return ''; }
   }
 
+  function norm(data) {
+    return data.map(function(c) {
+      return (c && typeof c === 'object' && c.postcode) ? c : {postcode:String(c), name:null};
+    });
+  }
+
+  function getLocActive() {
+    var all = pdAllDatasets_customers();
+    var name = localStorage.getItem(LOC_ACT_KEY);
+    if (!name || !all[name]) {
+      var names = Object.keys(all);
+      // Default to second dataset (or first if only one)
+      name = names.length > 1 ? names[1] : names[0];
+    }
+    return name;
+  }
+
   function renderPicker(ns_active) {
-    var all = pdAllDatasets_locations();
+    var all = pdAllDatasets_customers();
     var names = Object.keys(all);
-    // Find the element to replace: either the original label or the existing picker div
     var lbl = document.getElementById('ul-l') || document.getElementById('pd-picker-locations');
     if (!lbl) return;
 
@@ -1423,7 +1400,6 @@ function loadSample(ds) {
       + sel
       + '<div style="display:flex;gap:6px;margin-bottom:8px">'
       + '<button onclick="pdUseSelected_locations()" style="flex:1;padding:5px 0;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
-      + '<button onclick="pdDeleteSelected_locations()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
       + '</div>'
       + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
       + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
@@ -1440,83 +1416,67 @@ function loadSample(ds) {
       r.readAsText(f);
     });
 
-    if (ns_active && all[ns_active]) {
-      updateActiveBadge_locations(ns_active, all[ns_active]);
+    if (ns_active) {
+      var existing = document.getElementById('pd-active-locations');
+      var info = all[ns_active];
+      if (info) {
+        var html2 = '<div id="pd-active-locations" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+          + '&#10003; <strong>' + ns_active + '</strong> &mdash; ' + info.count + ' records'
+          + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+          + '</div>';
+        if (existing) { existing.outerHTML = html2; }
+        else {
+          var picker = document.getElementById('pd-picker-locations');
+          if (picker) picker.insertAdjacentHTML('afterend', html2);
+        }
+      }
     }
   }
 
-  // Expose globally at IIFE scope so it's always set, even before first call
   window.pdRenderPicker_locations = renderPicker;
-
-  function updateActiveBadge_locations(name, info) {
-    var existing = document.getElementById('pd-active-locations');
-    var html = '<div id="pd-active-locations" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
-      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
-      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
-      + '</div>';
-    if (existing) { existing.outerHTML = html; }
-    else {
-      var picker = document.getElementById('pd-picker-locations');
-      if (picker) picker.insertAdjacentHTML('afterend', html);
-    }
-  }
 
   window.pdUseSelected_locations = function() {
     var sel = document.getElementById('pd-sel-locations');
     if (!sel) return;
     var name = sel.value;
-    var all = pdAllDatasets_locations();
+    var all = pdAllDatasets_customers();
     if (!all[name]) return;
-    pdSetActive_locations(name);
+    localStorage.setItem(LOC_ACT_KEY, name);
     var data = all[name].data;
-    if (typeof lData !== 'undefined') lData = data;
-    if(all&&all[name]&&all[name].data&&all[name].data.length){  lData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
-    updateActiveBadge_locations(name, all[name]);
-  };
-
-  window.pdDeleteSelected_locations = function() {
-    var sel = document.getElementById('pd-sel-locations');
-    if (!sel) return;
-    var name = sel.value;
-    if (!confirm('Delete dataset "' + name + '"?')) return;
-    pdDeleteDataset_locations(name);
-    var all = pdAllDatasets_locations();
-    if (Object.keys(all).length) {
-      renderPicker(pdLoad_locations() ? pdLoad_locations().name : '');
-      pdUseSelected_locations();
-    } else {
-      location.reload();
-    }
+    if (typeof lData !== 'undefined') lData = norm(data);
+    if (typeof checkReady === 'function') checkReady();
+    renderPicker(name);
   };
 
   window.pdTriggerParse_locations = function(text, name) {
     if (typeof _pdOrigParse_locations === 'function') {
-      _pdOrigParse_locations(text);
+      _pdOrigParse_locations(text, 'l');
       setTimeout(function() {
-        var data = (typeof lData !== 'undefined') ? lData : [];
-        if (data.length) {
-          pdSave_locations(data, name);
-          renderPicker(name);
-          updateActiveBadge_locations(name, pdAllDatasets_locations()[name]);
-          
-        }
-      }, 150);
+        try {
+          if (typeof lData !== 'undefined' && lData.length) {
+            pdSave_customers(lData, name);
+            localStorage.setItem(LOC_ACT_KEY, name);
+            renderPicker(name);
+            // Also refresh Dataset 1 picker so it shows the new dataset too
+            if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(pdLoad_customers() ? pdLoad_customers().name : name);
+            if (typeof checkReady === 'function') checkReady();
+          }
+        } catch(e) {}
+      }, 200);
     }
   };
 
   window._pdOrigParse_locations = null;
 
   document.addEventListener('DOMContentLoaded', function() {
-    var all = pdAllDatasets_locations();
+    var all = pdAllDatasets_customers();
     var names = Object.keys(all);
-    var active = pdLoad_locations();
-
     if (names.length) {
-      renderPicker(active ? active.name : names[0]);
-      if (active && active.data && active.data.length) {
-        if (typeof lData !== 'undefined') lData = active.data;
-        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(all&&all[name]&&all[name].data&&all[name].data.length){  lData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
+      var active = getLocActive();
+      renderPicker(active);
+      if (active && all[active] && all[active].data && all[active].data.length) {
+        if (typeof lData !== 'undefined') lData = norm(all[active].data);
+        if (typeof checkReady === 'function') checkReady();
       }
     }
   });
@@ -1531,19 +1491,25 @@ document.addEventListener('DOMContentLoaded', function() {
       _pdOrigParse_customers(text, ds);
       setTimeout(function() {
         if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {
-          // Use the actual filename from the fi-c file input
           var fi = document.getElementById('fi-c');
           var name = (fi && fi.files && fi.files[0])
             ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
           pdSave_customers(cData, name);
           if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+          if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(
+            localStorage.getItem('geo_pd_eleven-australia_locations_active') || name
+          );
           if (typeof checkReady === 'function') checkReady();
         }
         if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {
           var fi2 = document.getElementById('fi-l');
           var name2 = (fi2 && fi2.files && fi2.files[0])
             ? fi2.files[0].name.replace(/[.][^.]+$/, '') : 'Locations';
-          pdSave_locations(lData, name2);
+          pdSave_customers(lData, name2);
+          localStorage.setItem('geo_pd_eleven-australia_locations_active', name2);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(
+            pdLoad_customers() ? pdLoad_customers().name : name2
+          );
           if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(name2);
           if (typeof checkReady === 'function') checkReady();
         }
