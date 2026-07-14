@@ -114,6 +114,47 @@ textarea::placeholder { color: var(--muted); }
 
 #map { flex: 1; }
 </style>
+
+<script>
+/* ── Pratt Digital multi-dataset storage: customers ── */
+(function() {
+  var DS_KEY  = 'geo_pd_pd_customers_datasets';
+  var ACT_KEY = 'geo_pd_pd_customers_active';
+
+  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
+
+  window.pdSave_customers = function(data, name) {
+    var all = _all();
+    name = name || 'Dataset ' + (Object.keys(all).length + 1);
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    _save(all);
+    localStorage.setItem(ACT_KEY, name);
+  };
+  window.pdLoad_customers = function() {
+    var all = _all(), keys = Object.keys(all);
+    if (!keys.length) return null;
+    var name = localStorage.getItem(ACT_KEY);
+    if (!name || !all[name]) name = keys[0];
+    return Object.assign({ name: name }, all[name]);
+  };
+  window.pdAllDatasets_customers = function() { return _all(); };
+  window.pdSetActive_customers   = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdDeleteDataset_customers = function(name) {
+    var all = _all(); delete all[name]; _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
+  };
+  window.pdClear_customers = function() {
+    localStorage.removeItem(DS_KEY);
+    localStorage.removeItem(ACT_KEY);
+  };
+  window.pdRawGet_customers = function(name) {
+    var all = _all();
+    return all[name] || null;
+  };
+})();
+</script>
 </head>
 <body>
 <header>
@@ -240,47 +281,30 @@ textarea::placeholder { color: var(--muted); }
 </script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
-// ── Branding: postMessage (iframe) → ?brand= URL param → localStorage ────
-function applyBrandSettings(s) {
-  if (!s) return;
-  if (s.primary) {
-    document.documentElement.style.setProperty('--pd-green', s.primary);
-    document.documentElement.style.setProperty('--pd-green-dark', s.primary);
-    document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
-  }
-  if (s.secondary) {
-    document.documentElement.style.setProperty('--pd-slate', s.secondary);
-    document.documentElement.style.setProperty('--pd-slate-dark', s.secondary);
-  }
-  if (s.name) {
-    const h1 = document.querySelector('header h1');
-    if (h1) h1.textContent = s.name + ' · Location Overlap Mapper';
-    document.title = document.title.replace('Pratt Digital', s.name);
-  }
-  const logoSrc = s.logoUrl || s.logo || '';
-  if (logoSrc) {
-    const img = document.querySelector('header .header-logo');
-    if (img) img.src = logoSrc;
-  }
-}
-
-// Apply on load from URL param or localStorage
-(function() {
-  let s = {};
+  // ── Branding (reads from launcher geoSuiteSettings) ──────────────────────
+(function applyBranding() {
   try {
-    const b = new URLSearchParams(window.location.search).get('brand');
-    if (b) s = JSON.parse(decodeURIComponent(escape(atob(b))));
+    const s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
+    if (s.primary) {
+      document.documentElement.style.setProperty('--pd-green', s.primary);
+      document.documentElement.style.setProperty('--pd-green-dark', s.primary);
+      document.documentElement.style.setProperty('--pd-green-light', s.primary + '26');
+    }
+    if (s.secondary) {
+      document.documentElement.style.setProperty('--pd-slate', s.secondary);
+      document.documentElement.style.setProperty('--pd-slate-dark', s.secondary);
+    }
+    if (s.name) {
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = s.name + ' · Location Overlap Mapper';
+      document.title = document.title.replace('Pratt Digital', s.name);
+    }
+    if (s.logo) {
+      const img = document.querySelector('header .header-logo');
+      if (img) img.src = s.logo;
+    }
   } catch(e) {}
-  if (!s.name && !s.primary) {
-    try { s = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
-  }
-  applyBrandSettings(s);
 })();
-
-// Override when launched from the launcher iframe (postMessage carries full settings incl. logo)
-window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'geoSuiteBrand') applyBrandSettings(e.data.settings);
-});
 let map;
 let cData = [], lData = [];       // parsed postcode rows
 let cResult = [], lResult = [];   // geocoded results
@@ -844,19 +868,13 @@ function exportAll() {
 function generateOverlapBrief() {
   if (!cResult.length && !lResult.length) { alert('Run analysis first.'); return; }
 
-  // Branding: URL ?brand= param → localStorage
+  // Branding from localStorage
   let branding = {};
-  try {
-    const b = new URLSearchParams(window.location.search).get('brand');
-    if (b) branding = JSON.parse(decodeURIComponent(escape(atob(b))));
-    if (!branding.name && !branding.primary) {
-      branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}');
-    }
-  } catch(e) {}
+  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch(e) {}
   const agencyName = branding.name      || 'Pratt Digital';
   const primary    = branding.primary   || '#aec90b';
   const secondary  = branding.secondary || '#f0a500';
-  const logoSrc    = branding.logoUrl   || branding.logo || '';
+  const logoSrc    = branding.logo      || '';
 
   function darken(hex, pct) {
     const n=parseInt(hex.slice(1),16),f=1-pct/100;
@@ -1136,6 +1154,301 @@ function loadSample(ds) {
     parseCSV(document.getElementById('pa-l').value,'l');
   }
 }
+</script>
+
+<script>
+
+/* ─── PD dataset picker: customers ─── */
+(function() {
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+    catch(e) { return ''; }
+  }
+
+  function renderPicker(ns_active) {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    // Find the element to replace: either the original label or the existing picker div
+    var lbl = document.getElementById('ul-c') || document.getElementById('pd-picker-customers');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-customers" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    });
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-customers" style="border:1.5px solid #4f46e5;border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:#4f46e5;margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_customers()" style="flex:1;padding:5px 0;background:#4f46e5;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '<button onclick="pdDeleteSelected_customers()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-customers" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-customers').addEventListener('change', function() {
+      var f = this.files[0]; if (!f) return;
+      var name = f.name.replace(/[.][^.]+$/, '') || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) { pdTriggerParse_customers(e.target.result, name); };
+      r.readAsText(f);
+    });
+
+    if (ns_active && all[ns_active]) {
+      updateActiveBadge_customers(ns_active, all[ns_active]);
+    }
+  }
+
+  // Expose globally at IIFE scope so it's always set, even before first call
+  window.pdRenderPicker_customers = renderPicker;
+
+  function updateActiveBadge_customers(name, info) {
+    var existing = document.getElementById('pd-active-customers');
+    var html = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
+      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+      + '</div>';
+    if (existing) { existing.outerHTML = html; }
+    else {
+      var picker = document.getElementById('pd-picker-customers');
+      if (picker) picker.insertAdjacentHTML('afterend', html);
+    }
+  }
+
+  window.pdUseSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_customers();
+    if (!all[name]) return;
+    pdSetActive_customers(name);
+    var data = all[name].data;
+    if (typeof cData !== 'undefined') cData = data;
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
+    updateActiveBadge_customers(name, all[name]);
+  };
+
+  window.pdDeleteSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    pdDeleteDataset_customers(name);
+    var all = pdAllDatasets_customers();
+    if (Object.keys(all).length) {
+      renderPicker(pdLoad_customers() ? pdLoad_customers().name : '');
+      pdUseSelected_customers();
+    } else {
+      location.reload();
+    }
+  };
+
+  window.pdTriggerParse_customers = function(text, name) {
+    if (typeof _pdOrigParse_customers === 'function') {
+      _pdOrigParse_customers(text);
+      setTimeout(function() {
+        var data = (typeof cData !== 'undefined') ? cData : [];
+        if (data.length) {
+          pdSave_customers(data, name);
+          renderPicker(name);
+          updateActiveBadge_customers(name, pdAllDatasets_customers()[name]);
+          
+        }
+      }, 150);
+    }
+  };
+
+  window._pdOrigParse_customers = null;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    var active = pdLoad_customers();
+
+    if (names.length) {
+      renderPicker(active ? active.name : names[0]);
+      if (active && active.data && active.data.length) {
+        if (typeof cData !== 'undefined') cData = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
+      }
+    }
+  });
+
+})();
+
+
+/* ─── PD dataset picker: Dataset 2 (locations slot, shared customers namespace) ─── */
+(function() {
+  var LOC_ACT_KEY = 'geo_pd_pd_locations_active';
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+    catch(e) { return ''; }
+  }
+
+  function norm(data) {
+    return data.map(function(c) {
+      return (c && typeof c === 'object' && c.postcode) ? c : {postcode:String(c), name:null};
+    });
+  }
+
+  function getLocActive() {
+    var all = pdAllDatasets_customers();
+    var name = localStorage.getItem(LOC_ACT_KEY);
+    if (!name || !all[name]) {
+      var names = Object.keys(all);
+      // Default to second dataset (or first if only one)
+      name = names.length > 1 ? names[1] : names[0];
+    }
+    return name;
+  }
+
+  function renderPicker(ns_active) {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    var lbl = document.getElementById('ul-l') || document.getElementById('pd-picker-locations');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-locations" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    });
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-locations" style="border:1.5px solid #d97706;border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:#d97706;margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_locations()" style="flex:1;padding:5px 0;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-locations" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-locations').addEventListener('change', function() {
+      var f = this.files[0]; if (!f) return;
+      var name = f.name.replace(/[.][^.]+$/, '') || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) { pdTriggerParse_locations(e.target.result, name); };
+      r.readAsText(f);
+    });
+
+    if (ns_active) {
+      var existing = document.getElementById('pd-active-locations');
+      var info = all[ns_active];
+      if (info) {
+        var html2 = '<div id="pd-active-locations" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+          + '&#10003; <strong>' + ns_active + '</strong> &mdash; ' + info.count + ' records'
+          + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+          + '</div>';
+        if (existing) { existing.outerHTML = html2; }
+        else {
+          var picker = document.getElementById('pd-picker-locations');
+          if (picker) picker.insertAdjacentHTML('afterend', html2);
+        }
+      }
+    }
+  }
+
+  window.pdRenderPicker_locations = renderPicker;
+
+  window.pdUseSelected_locations = function() {
+    var sel = document.getElementById('pd-sel-locations');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_customers();
+    if (!all[name]) return;
+    localStorage.setItem(LOC_ACT_KEY, name);
+    var data = all[name].data;
+    if (typeof lData !== 'undefined') lData = norm(data);
+    if (typeof checkReady === 'function') checkReady();
+    renderPicker(name);
+  };
+
+  window.pdTriggerParse_locations = function(text, name) {
+    if (typeof _pdOrigParse_locations === 'function') {
+      _pdOrigParse_locations(text, 'l');
+      setTimeout(function() {
+        try {
+          if (typeof lData !== 'undefined' && lData.length) {
+            pdSave_customers(lData, name);
+            localStorage.setItem(LOC_ACT_KEY, name);
+            renderPicker(name);
+            // Also refresh Dataset 1 picker so it shows the new dataset too
+            if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(pdLoad_customers() ? pdLoad_customers().name : name);
+            if (typeof checkReady === 'function') checkReady();
+          }
+        } catch(e) {}
+      }, 200);
+    }
+  };
+
+  window._pdOrigParse_locations = null;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    if (names.length) {
+      var active = getLocActive();
+      renderPicker(active);
+      if (active && all[active] && all[active].data && all[active].data.length) {
+        if (typeof lData !== 'undefined') lData = norm(all[active].data);
+        if (typeof checkReady === 'function') checkReady();
+      }
+    }
+  });
+
+})();
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof parseCSV === 'function') {
+    _pdOrigParse_customers = parseCSV;
+    _pdOrigParse_locations = parseCSV;
+    parseCSV = function(text, ds) {
+      _pdOrigParse_customers(text, ds);
+      setTimeout(function() {
+        if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {
+          var fi = document.getElementById('fi-c');
+          var name = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          pdSave_customers(cData, name);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+          if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(
+            localStorage.getItem('geo_pd_pd_locations_active') || name
+          );
+          if (typeof checkReady === 'function') checkReady();
+        }
+        if (ds === 'l' && typeof lData !== 'undefined' && lData.length) {
+          var fi2 = document.getElementById('fi-l');
+          var name2 = (fi2 && fi2.files && fi2.files[0])
+            ? fi2.files[0].name.replace(/[.][^.]+$/, '') : 'Locations';
+          pdSave_customers(lData, name2);
+          localStorage.setItem('geo_pd_pd_locations_active', name2);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(
+            pdLoad_customers() ? pdLoad_customers().name : name2
+          );
+          if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(name2);
+          if (typeof checkReady === 'function') checkReady();
+        }
+      }, 150);
+    };
+  }
+});
 </script>
 </body>
 </html>

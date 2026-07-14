@@ -262,6 +262,17 @@ footer {
   </div>
 </header>
 
+
+<div style="background:#fff;border-radius:16px;padding:28px 32px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1.5px solid #e0e7ff;margin-bottom:28px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <div style="width:40px;height:40px;background:#eef2ff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">📁</div>
+    <div>
+      <h2 style="margin:0;font-size:16px;font-weight:700;color:#1e1b4b">Your Data</h2>
+      <p style="margin:0;font-size:13px;color:#6b7280">Upload customer files here — they load automatically in every tool</p>
+    </div>
+  </div>
+  <div id="pd-data-manager">Loading...</div>
+</div>
 <main>
   <div class="hero">
     <div class="hero-badge">Client Intelligence</div>
@@ -812,6 +823,140 @@ function closeTool() {
 
 // ESC to close
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTool(); });
+</script>
+
+<script>
+/* ── Pratt Digital Launcher Data Manager ── */
+(function() {
+  var DS_KEY  = 'geo_pd_pd_customers_datasets';
+  var ACT_KEY = 'geo_pd_pd_customers_active';
+
+  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
+    catch(e) { return ''; }
+  }
+
+  // Normalise a potential postcode string (same logic as the tools)
+  function normalisePC(s) {
+    if (!s) return null;
+    var c = s.replace(/\s+/g,'').toUpperCase();
+    if (c.length >= 5 && c.length <= 7) return c.slice(0,-3) + ' ' + c.slice(-3);
+    return null;
+  }
+
+  // Extract postcodes from raw CSV/text, matching the tools' parseCustomers behaviour:
+  // one postcode per row, duplicates kept (multiple customers at same postcode = real data),
+  // header row skipped, normalisePC fallback on last/first cell.
+  function extractPostcodes(text) {
+    var lines = text.replace(/\r/g,'').trim().split('\n').filter(function(l){return l.trim();});
+    var results = [];
+    var isHdr = function(l) { return /postcode|address|name|customer|email/i.test(l); };
+    var start = lines.length && isHdr(lines[0]) ? 1 : 0;
+    for (var i = start; i < lines.length; i++) {
+      var parts = lines[i].split(',').map(function(s){return s.trim().replace(/^["']|["']$/g,'');});
+      var pc = null;
+      for (var j = 0; j < parts.length; j++) {
+        var m = parts[j].match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
+        if (m) { pc = normalisePC(m[1]); if (pc) break; }
+      }
+      if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
+      if (pc) results.push(pc);
+    }
+    return results;
+  }
+
+  function renderManager() {
+    var all = _all();
+    var names = Object.keys(all);
+    var active = localStorage.getItem(ACT_KEY) || (names[0] || '');
+    var mgr = document.getElementById('pd-data-manager');
+    if (!mgr) return;
+
+    var listHtml = '';
+    if (names.length === 0) {
+      listHtml = '<p style="color:#6b7280;font-size:13px;margin:0 0 12px">No datasets saved yet. Upload a file below.</p>';
+    } else {
+      listHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px">'
+        + '<thead><tr style="border-bottom:1px solid #e5e7eb">'
+        + '<th style="text-align:left;padding:4px 8px;color:#6b7280;font-weight:500">Name</th>'
+        + '<th style="text-align:right;padding:4px 8px;color:#6b7280;font-weight:500">Records</th>'
+        + '<th style="text-align:right;padding:4px 8px;color:#6b7280;font-weight:500">Saved</th>'
+        + '<th style="padding:4px 8px"></th>'
+        + '</tr></thead><tbody>';
+      names.forEach(function(n) {
+        var info = all[n];
+        var isActive = (n === active);
+        listHtml += '<tr style="border-bottom:1px solid #f3f4f6' + (isActive?' background:#f0fdf4':'') + '">'
+          + '<td style="padding:6px 8px;font-weight:' + (isActive?'600':'400') + ';color:#1f2937">'
+          + (isActive ? '&#10003; ' : '') + n.replace(/</g,'&lt;') + '</td>'
+          + '<td style="padding:6px 8px;text-align:right;color:#374151">' + (info.count||0).toLocaleString() + '</td>'
+          + '<td style="padding:6px 8px;text-align:right;color:#6b7280">' + fmtDate(info.savedAt) + '</td>'
+          + '<td style="padding:6px 8px;text-align:right">'
+          + '<button onclick="pdLauncherDelete(' + JSON.stringify(n) + ')" style="font-size:11px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 6px">Delete</button>'
+          + '</td></tr>';
+      });
+      listHtml += '</tbody></table>';
+    }
+
+    mgr.innerHTML = listHtml
+      + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:160px">'
+      + '<label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Dataset name</label>'
+      + '<input id="pd-new-name" type="text" placeholder="e.g. Online Customers" '
+      + 'style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">'
+      + '</div>'
+      + '<div style="flex:1;min-width:160px">'
+      + '<label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">CSV / TXT file</label>'
+      + '<input id="pd-new-file" type="file" accept=".csv,.txt" '
+      + 'style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff">'
+      + '</div>'
+      + '<button onclick="pdLauncherUpload()" style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Save Dataset</button>'
+      + '</div>'
+      + '<p id="pd-upload-status" style="font-size:12px;color:#6b7280;margin:8px 0 0"></p>';
+  }
+
+  window.pdLauncherUpload = function() {
+    var fi = document.getElementById('pd-new-file');
+    var ni = document.getElementById('pd-new-name');
+    var st = document.getElementById('pd-upload-status');
+    if (!fi || !fi.files[0]) { if (st) st.textContent = 'Please choose a file.'; return; }
+    var rawName = fi.files[0].name.replace(/[.][^.]+$/, '');
+    var name = (ni && ni.value.trim()) ? ni.value.trim() : rawName || 'Dataset';
+    if (st) st.textContent = 'Reading file...';
+    var r = new FileReader();
+    r.onload = function(e) {
+      var postcodes = extractPostcodes(e.target.result);
+      if (!postcodes.length) {
+        if (st) st.textContent = 'No UK postcodes found in file. Please check the format.';
+        return;
+      }
+      var all = _all();
+      all[name] = { data: postcodes, count: postcodes.length, savedAt: new Date().toISOString() };
+      _save(all);
+      localStorage.setItem(ACT_KEY, name);
+      if (st) st.textContent = 'Saved "' + name + '" (' + postcodes.length.toLocaleString() + ' postcodes).';
+      if (ni) ni.value = '';
+      if (fi) fi.value = '';
+      renderManager();
+    };
+    r.readAsText(fi.files[0]);
+  };
+
+  window.pdLauncherDelete = function(name) {
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    var all = _all();
+    delete all[name];
+    _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
+    renderManager();
+  };
+
+  document.addEventListener('DOMContentLoaded', renderManager);
+})();
 </script>
 </body>
 </html>

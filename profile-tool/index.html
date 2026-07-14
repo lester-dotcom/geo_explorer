@@ -11,6 +11,47 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <!-- App styles -->
   <link rel="stylesheet" href="styles.css">
+
+<script>
+/* ── Pratt Digital multi-dataset storage: customers ── */
+(function() {
+  var DS_KEY  = 'geo_pd_pd_customers_datasets';
+  var ACT_KEY = 'geo_pd_pd_customers_active';
+
+  function _all()   { try { return JSON.parse(localStorage.getItem(DS_KEY)||'{}'); } catch(e) { return {}; } }
+  function _save(o) { try { localStorage.setItem(DS_KEY, JSON.stringify(o)); } catch(e) {} }
+
+  window.pdSave_customers = function(data, name) {
+    var all = _all();
+    name = name || 'Dataset ' + (Object.keys(all).length + 1);
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    _save(all);
+    localStorage.setItem(ACT_KEY, name);
+  };
+  window.pdLoad_customers = function() {
+    var all = _all(), keys = Object.keys(all);
+    if (!keys.length) return null;
+    var name = localStorage.getItem(ACT_KEY);
+    if (!name || !all[name]) name = keys[0];
+    return Object.assign({ name: name }, all[name]);
+  };
+  window.pdAllDatasets_customers = function() { return _all(); };
+  window.pdSetActive_customers   = function(name) { localStorage.setItem(ACT_KEY, name); };
+  window.pdDeleteDataset_customers = function(name) {
+    var all = _all(); delete all[name]; _save(all);
+    var keys = Object.keys(all);
+    localStorage.setItem(ACT_KEY, keys.length ? keys[0] : '');
+  };
+  window.pdClear_customers = function() {
+    localStorage.removeItem(DS_KEY);
+    localStorage.removeItem(ACT_KEY);
+  };
+  window.pdRawGet_customers = function(name) {
+    var all = _all();
+    return all[name] || null;
+  };
+})();
+</script>
 </head>
 <body>
 <header>
@@ -74,5 +115,158 @@
   <script src="data.js"></script>
   <!-- App logic -->
   <script src="app.js"></script>
+
+<script>
+
+/* ─── PD dataset picker: customers ─── */
+(function() {
+
+  function fmtDate(s) {
+    try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+    catch(e) { return ''; }
+  }
+
+  function renderPicker(ns_active) {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    // Find the element to replace: either the original label or the existing picker div
+    var lbl = document.getElementById('uploadLabel') || document.getElementById('pd-picker-customers');
+    if (!lbl) return;
+
+    var sel = '<select id="pd-sel-customers" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-bottom:6px;background:#fff">';
+    names.forEach(function(n) {
+      sel += '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n === ns_active ? ' selected' : '') + '>'
+           + n + ' (' + all[n].count + ')</option>';
+    });
+    sel += '</select>';
+
+    lbl.outerHTML =
+      '<div id="pd-picker-customers" style="border:1.5px solid #7c3aed;border-radius:8px;padding:10px 12px;font-size:12px;">'
+      + '<div style="font-weight:600;color:#7c3aed;margin-bottom:6px">Saved datasets</div>'
+      + sel
+      + '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      + '<button onclick="pdUseSelected_customers()" style="flex:1;padding:5px 0;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Load selected</button>'
+      + '<button onclick="pdDeleteSelected_customers()" style="padding:5px 10px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;border-radius:5px;font-size:11px;cursor:pointer">Delete</button>'
+      + '</div>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:8px;color:#6b7280;font-size:11px">'
+      + '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">'
+      + '<input type="file" id="pd-fi-customers" accept=".csv,.txt,.xlsx" style="display:none">'
+      + '&#43; Upload new dataset</label>'
+      + '</div>'
+      + '</div>';
+
+    document.getElementById('pd-fi-customers').addEventListener('change', function() {
+      var f = this.files[0]; if (!f) return;
+      var name = f.name.replace(/[.][^.]+$/, '') || 'Dataset';
+      var r = new FileReader();
+      r.onload = function(e) { pdTriggerParse_customers(e.target.result, name); };
+      r.readAsText(f);
+    });
+
+    if (ns_active && all[ns_active]) {
+      updateActiveBadge_customers(ns_active, all[ns_active]);
+    }
+  }
+
+  // Expose globally at IIFE scope so it's always set, even before first call
+  window.pdRenderPicker_customers = renderPicker;
+
+  function updateActiveBadge_customers(name, info) {
+    var existing = document.getElementById('pd-active-customers');
+    var html = '<div id="pd-active-customers" style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-size:11px;color:#374151">'
+      + '&#10003; <strong>' + name + '</strong> &mdash; ' + info.count + ' records'
+      + (info.savedAt ? ' &middot; saved ' + fmtDate(info.savedAt) : '')
+      + '</div>';
+    if (existing) { existing.outerHTML = html; }
+    else {
+      var picker = document.getElementById('pd-picker-customers');
+      if (picker) picker.insertAdjacentHTML('afterend', html);
+    }
+  }
+
+  window.pdUseSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    var all = pdAllDatasets_customers();
+    if (!all[name]) return;
+    pdSetActive_customers(name);
+    var data = all[name].data;
+    if (typeof rawData !== 'undefined') rawData = data;
+    if(typeof checkReady==="function") checkReady();
+    updateActiveBadge_customers(name, all[name]);
+  };
+
+  window.pdDeleteSelected_customers = function() {
+    var sel = document.getElementById('pd-sel-customers');
+    if (!sel) return;
+    var name = sel.value;
+    if (!confirm('Delete dataset "' + name + '"?')) return;
+    pdDeleteDataset_customers(name);
+    var all = pdAllDatasets_customers();
+    if (Object.keys(all).length) {
+      renderPicker(pdLoad_customers() ? pdLoad_customers().name : '');
+      pdUseSelected_customers();
+    } else {
+      location.reload();
+    }
+  };
+
+  window.pdTriggerParse_customers = function(text, name) {
+    if (typeof _pdOrigParse_customers === 'function') {
+      _pdOrigParse_customers(text);
+      setTimeout(function() {
+        var data = (typeof rawData !== 'undefined') ? rawData : [];
+        if (data.length) {
+          pdSave_customers(data, name);
+          renderPicker(name);
+          updateActiveBadge_customers(name, pdAllDatasets_customers()[name]);
+          if(typeof checkReady==="function") checkReady();
+        }
+      }, 150);
+    }
+  };
+
+  window._pdOrigParse_customers = null;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var all = pdAllDatasets_customers();
+    var names = Object.keys(all);
+    var active = pdLoad_customers();
+
+    if (names.length) {
+      renderPicker(active ? active.name : names[0]);
+      if (active && active.data && active.data.length) {
+        if (typeof rawData !== 'undefined') rawData = active.data;
+        var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
+        if(typeof checkReady==="function") checkReady();
+      }
+    }
+  });
+
+})();
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof parseCSV === 'function') {
+    _pdOrigParse_customers = parseCSV;
+    parseCSV = function(text) {
+      _pdOrigParse_customers(text);
+      // If picker isn't shown yet (first upload), save and render
+      if (!document.getElementById('pd-picker-customers')) {
+        setTimeout(function() {
+          var data = (typeof rawData !== 'undefined') ? rawData : [];
+          if (!data.length) return;
+          var fi = document.getElementById('fileInput');
+          var name = (fi && fi.files && fi.files[0])
+            ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          pdSave_customers(data, name);
+          if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
+          if(typeof checkReady==="function") checkReady();
+        }, 150);
+      }
+    };
+  }
+});
+</script>
 </body>
 </html>
