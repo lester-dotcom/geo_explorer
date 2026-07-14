@@ -515,50 +515,44 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ── bulkGeocode ───────────────────────────────────────────────────────────
-async function bulkGeocode(postcodes) {
-  const BATCH = 100, TIMEOUT_MS = 10000, res = {};
+// ── geocodeDistricts ──────────────────────────────────────────────────────
+// Geocodes unique outward codes (e.g. "YO26") via postcodes.io /outcodes.
+// Far fewer calls than per-postcode lookup; markers plot at district centre.
+async function geocodeDistricts(districts) {
+  const TIMEOUT_MS = 8000, res = {};
+  const statusEl = document.getElementById('customer-status');
+  let done = 0;
 
-  async function fetchBatch(batch) {
+  async function fetchOne(district) {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      const r = await fetch('https://api.postcodes.io/postcodes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postcodes: batch }),
+      const r = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(district), {
         signal: ctrl.signal
       });
       clearTimeout(tid);
-      const d = await r.json();
-      if (d.status === 200) {
-        for (const item of d.result) {
-          const val = item.result
-            ? { lat: item.result.latitude, lng: item.result.longitude, district: item.result.admin_district || 'Unknown', valid: true }
-            : { valid: false };
-          res[item.query] = val;
-          res[item.query.replace(/\s+/g,'').toUpperCase()] = val;
+      if (r.ok) {
+        const d = await r.json();
+        if (d.status === 200 && d.result) {
+          res[district] = { lat: d.result.latitude, lng: d.result.longitude, valid: true };
+        } else {
+          res[district] = { valid: false };
         }
+      } else {
+        res[district] = { valid: false };
       }
     } catch(e) {
       clearTimeout(tid);
-      console.error('Geocode batch error:', e);
-      return false; // signal failure
+      res[district] = { valid: false };
     }
-    return true;
+    done++;
+    statusEl.textContent = 'Geocoding… ' + done + '/' + districts.length + ' districts';
   }
 
-  for (let i = 0; i < postcodes.length; i += BATCH) {
-    const batch = postcodes.slice(i, i + BATCH);
-    const statusEl = document.getElementById('customer-status');
-    statusEl.textContent = 'Geocoding… ' + i + '/' + postcodes.length;
-    const ok = await fetchBatch(batch);
-    if (!ok) {
-      // Retry once after a short pause before skipping
-      statusEl.textContent = 'Geocoding… retrying batch ' + (i/BATCH + 1) + '…';
-      await new Promise(r => setTimeout(r, 2000));
-      await fetchBatch(batch);
-    }
+  // Run up to 6 requests concurrently
+  const CONCURRENCY = 6;
+  for (let i = 0; i < districts.length; i += CONCURRENCY) {
+    await Promise.all(districts.slice(i, i + CONCURRENCY).map(fetchOne));
   }
   return res;
 }
@@ -570,15 +564,16 @@ async function runCustomerAnalysis() {
   btn.disabled = true;
   btn.textContent = 'Geocoding…';
 
-  const uniquePostcodes = [...new Set(customerData)];
-  const geo = await bulkGeocode(uniquePostcodes);
+  // Extract unique districts and geocode those instead of individual postcodes
+  const districtOf = pc => pc.replace(/\s.*/, '').toUpperCase();
+  const uniqueDistricts = [...new Set(customerData.map(districtOf))];
+  const geo = await geocodeDistricts(uniqueDistricts);
 
   customerResults = [];
   for (const pc of customerData) {
-    const g = geo[pc] || geo[pc.replace(/\s+/g,'').toUpperCase()];
+    const district = districtOf(pc);
+    const g = geo[district];
     if (!g || !g.valid) continue;
-    // Extract district (area code) from postcode
-    const district = pc.replace(/\s.*/, '').toUpperCase();
     const dwellingDistrict = DATA[district] || null;
     customerResults.push({
       postcode: pc,
