@@ -585,17 +585,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── bulkGeocode ───────────────────────────────────────────────────────────
 async function bulkGeocode(postcodes) {
-  const BATCH = 100, res = {};
-  for (let i = 0; i < postcodes.length; i += BATCH) {
-    const batch = postcodes.slice(i, i + BATCH);
-    const statusEl = document.getElementById('customer-status');
-    statusEl.textContent = 'Geocoding… ' + i + '/' + postcodes.length;
+  const BATCH = 100, TIMEOUT_MS = 10000, res = {};
+
+  async function fetchBatch(batch) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
       const r = await fetch('https://api.postcodes.io/postcodes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postcodes: batch })
+        body: JSON.stringify({ postcodes: batch }),
+        signal: ctrl.signal
       });
+      clearTimeout(tid);
       const d = await r.json();
       if (d.status === 200) {
         for (const item of d.result) {
@@ -606,7 +608,25 @@ async function bulkGeocode(postcodes) {
           res[item.query.replace(/\s+/g,'').toUpperCase()] = val;
         }
       }
-    } catch(e) { console.error(e); }
+    } catch(e) {
+      clearTimeout(tid);
+      console.error('Geocode batch error:', e);
+      return false; // signal failure
+    }
+    return true;
+  }
+
+  for (let i = 0; i < postcodes.length; i += BATCH) {
+    const batch = postcodes.slice(i, i + BATCH);
+    const statusEl = document.getElementById('customer-status');
+    statusEl.textContent = 'Geocoding… ' + i + '/' + postcodes.length;
+    const ok = await fetchBatch(batch);
+    if (!ok) {
+      // Retry once after a short pause before skipping
+      statusEl.textContent = 'Geocoding… retrying batch ' + (i/BATCH + 1) + '…';
+      await new Promise(r => setTimeout(r, 2000));
+      await fetchBatch(batch);
+    }
   }
   return res;
 }
