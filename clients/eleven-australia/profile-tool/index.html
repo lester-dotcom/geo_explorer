@@ -92,7 +92,13 @@
   window.pdSave_customers = function(data, name) {
     var all = _all();
     name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    // Persist the CSV column metadata alongside the rows, so a restored dataset
+    // keeps the client's own column labels (e.g. "Eleven Retail Net Sales").
+    var meta = null;
+    try {
+      if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+    } catch(e) {}
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
     localStorage.setItem(ACT_KEY, name);
   };
@@ -137,8 +143,25 @@
       <div id="fileName" style="font-size:11px;font-weight:500;margin-top:3px;color:var(--c1)"></div>
     </label>
     <textarea id="pasteArea" placeholder="Paste postcodes here&#10;SW1A 2AA&#10;M1 1AE&#10;B1 1BB&#10;&#10;One per row. Headers optional."></textarea>
-    <div class="format-hint">One postcode per row. CSV columns OK — postcode auto-detected.</div>
+    <div class="format-hint">One postcode per row. CSV columns OK — postcode auto-detected. Name, revenue/value and owner (e.g. <code>AM</code>) columns are picked up and carried into the profile, exports and brief.</div>
     <button class="btn-sample" onclick="loadSample()">↗ Load sample dataset</button>
+
+    <div id="groupPanel" style="display:none;margin-top:10px">
+      <div class="section-label" id="groupPanelLabel">Filter</div>
+      <div id="groupList" style="max-height:170px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;font-size:11px"></div>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button class="btn-sample" style="flex:1;margin:0" onclick="setAllGroups(true)">Select all</button>
+        <button class="btn-sample" style="flex:1;margin:0" onclick="setAllGroups(false)">Clear</button>
+      </div>
+    </div>
+
+    <div id="rankPanel" style="display:none;margin-top:10px">
+      <div class="section-label">Rank districts by</div>
+      <div class="seg" style="display:flex;gap:4px">
+        <button id="btnRankCount" class="btn-sample active" style="flex:1;margin:0" onclick="setRankMode('count')">Count</button>
+        <button id="btnRankValue" class="btn-sample" style="flex:1;margin:0" onclick="setRankMode('value')">Value</button>
+      </div>
+    </div>
 
     <button class="btn btn-primary" id="analyseBtn" onclick="runAnalysis()" disabled>Build profile</button>
     <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
@@ -174,6 +197,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <!-- Valid districts whitelist (loaded before data.js) -->
+  <script src="pd_csv.js"></script>
   <script src="valid_districts.js"></script>
   <!-- Valid sectors whitelist -->
   <script src="valid_sectors.js"></script>
@@ -261,7 +285,7 @@
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof rawData !== 'undefined') rawData = data;
-    if(typeof checkReady==="function") checkReady();
+    if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -307,7 +331,7 @@
       if (active && active.data && active.data.length) {
         if (typeof rawData !== 'undefined') rawData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(typeof checkReady==="function") checkReady();
+        if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
       }
     }
   });

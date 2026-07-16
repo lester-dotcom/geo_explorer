@@ -38,8 +38,11 @@ const REGION_COLOURS = ['#2d5be3','#e35b2d','#18a058','#9333ea','#f59e0b','#06b6
   }
 })();
 
-let rawData = [];
+let rawData = [];          // PDCSV records, not bare postcodes
 let profileData = null;
+let csvMeta = null;        // PDCSV parse metadata: which columns were found
+let activeGroups = null;   // Set of active group (e.g. AM) values; null = all
+let rankMode = 'count';    // 'count' | 'value' — what districts are ranked by
 
 // ── File input ────────────────────────────────────────────────────────────
 document.getElementById('fileInput').addEventListener('change', function() {
@@ -67,35 +70,126 @@ document.getElementById('pasteArea').addEventListener('input', function(){
 });
 
 // ── Parse ─────────────────────────────────────────────────────────────────
-function normalisePC(s) {
-  if (!s) return null;
-  const c = s.replace(/\s+/g,'').toUpperCase();
-  if (c.length>=5&&c.length<=7) return c.slice(0,-3)+' '+c.slice(-3);
-  return null;
-}
-function extractPC(s) {
-  const m = s.match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
-  return m ? normalisePC(m[1]) : null;
-}
+function normalisePC(s) { return PDCSV.normalisePC(s); }
+function extractPC(s)   { return PDCSV.extractPC(s); }
 function districtOf(pc) { return pc.replace(/\s.*/,''); }
+
+/* rawData holds PDCSV records ({postcode, name, value, group, ref}), not bare
+   postcode strings, so the uploaded columns survive into the profile + exports. */
 function parseCSV(text) {
-  const lines = text.trim().split('\n').filter(l=>l.trim());
-  if (!lines.length) { rawData=[]; checkReady(); return; }
-  const isHdr = l => /postcode|address|name|customer|email|order/i.test(l);
-  const start = isHdr(lines[0]) ? 1 : 0;
-  rawData = [];
-  for (const line of lines.slice(start)) {
-    const parts = line.split(',').map(s=>s.trim().replace(/^["']|["']$/g,''));
-    let pc = null;
-    for (const p of parts) { if(!pc) pc=extractPC(p); }
-    if(!pc) pc=normalisePC(parts[parts.length-1])||normalisePC(parts[0]);
-    if(pc) rawData.push(pc);
-  }
-  setStatus(`${rawData.length} postcodes loaded.`);
+  const parsed = PDCSV.records(text);
+  rawData = parsed.records;
+  csvMeta = parsed;
+  activeGroups = null;   // a new upload resets any territory filter
+
+  const bits = [];
+  if (parsed.hasName)  bits.push(parsed.nameLabel);
+  if (parsed.hasValue) bits.push(parsed.valueLabel);
+  if (parsed.hasGroup) bits.push(parsed.groupLabel);
+  setStatus(`${rawData.length} postcodes loaded.` + (bits.length ? ` Columns: ${bits.join(', ')}.` : ''));
+  renderGroupFilter();
+  renderRankPanel();
   checkReady();
 }
 function checkReady() {
-  document.getElementById('analyseBtn').disabled = rawData.length===0;
+  document.getElementById('analyseBtn').disabled = filteredRaw().length===0;
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+}
+
+/* Client builds restore saved datasets straight from localStorage, bypassing
+   parseCSV — these hooks let the stored dataset carry its column metadata so
+   the profile, filter, rank toggle and exports keep working (and keep the
+   client's own column labels) after a reload. */
+window.pdCaptureMeta = function() { return csvMeta; };
+window.pdRestoreMeta = function(saved) {
+  // A launcher-saved dataset may hold bare postcode strings; normalise first.
+  rawData = (rawData || []).map(r =>
+    (r && typeof r === 'object' && r.postcode) ? r : { postcode: String(r), name: null,
+      group: null, ref: null, value: null, valueRaw: null });
+  csvMeta = PDCSV.metaFromRecords(rawData, saved);
+  activeGroups = null;
+  rankMode = 'count';
+  renderGroupFilter();
+  renderRankPanel();
+};
+
+// ── Group (e.g. account manager) filter ───────────────────────────────────
+function inGroup(r) {
+  if (!activeGroups) return true;
+  if (!csvMeta || !csvMeta.hasGroup) return true;
+  return !!r.group && activeGroups.has(r.group);
+}
+function filteredRaw() { return rawData.filter(inGroup); }
+
+/* Show a checkbox per group value; hidden when the upload has no group column. */
+function renderGroupFilter() {
+  const panel = document.getElementById('groupPanel');
+  if (!panel) return;
+  const groups = PDCSV.groupsOf(rawData);
+  if (groups.length < 2) { panel.style.display = 'none'; return; }
+
+  document.getElementById('groupPanelLabel').textContent = 'Filter by ' + csvMeta.groupLabel;
+  panel.style.display = 'block';
+  document.getElementById('groupList').innerHTML = groups.map(g => {
+    const recs = rawData.filter(r => r.group === g);
+    const on = !activeGroups || activeGroups.has(g);
+    const val = csvMeta.hasValue ? PDCSV.sumValue(recs) : null;
+    return `<label style="display:flex;align-items:center;gap:6px;padding:3px 2px;cursor:pointer">
+      <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleGroup(${JSON.stringify(g).replace(/"/g,'&quot;')}, this.checked)">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(g)}</span>
+      <span style="color:var(--muted);font-size:10px">${recs.length}${val ? ' · ' + PDCSV.fmtValue(val) : ''}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleGroup(g, on) {
+  const groups = PDCSV.groupsOf(rawData);
+  if (!activeGroups) activeGroups = new Set(groups);
+  if (on) activeGroups.add(g); else activeGroups.delete(g);
+  if (activeGroups.size === groups.length) activeGroups = null;
+  renderGroupFilter();
+  checkReady();
+  if (profileData) runAnalysis();
+}
+
+function setAllGroups(on) {
+  activeGroups = on ? null : new Set();
+  renderGroupFilter();
+  checkReady();
+  if (profileData && filteredRaw().length) runAnalysis();
+}
+
+/* Weight a set of enriched records: either headcount or summed value. */
+function weightOf(list) {
+  return rankMode === 'value' ? PDCSV.sumValue(list) : list.length;
+}
+function fmtWeight(n) {
+  return rankMode === 'value' ? PDCSV.fmtValue(n) : n.toLocaleString();
+}
+function canRankByValue() { return !!(csvMeta && csvMeta.hasValue); }
+
+/* The count/value toggle only appears when the upload has a value column;
+   count stays the default so existing behaviour is unchanged. */
+function renderRankPanel() {
+  const panel = document.getElementById('rankPanel');
+  if (!panel) return;
+  if (!canRankByValue()) { panel.style.display = 'none'; rankMode = 'count'; return; }
+  panel.style.display = 'block';
+  document.getElementById('btnRankValue').textContent = csvMeta.valueLabel.length > 14
+    ? 'Value' : csvMeta.valueLabel;
+  document.getElementById('btnRankCount').classList.toggle('active', rankMode === 'count');
+  document.getElementById('btnRankValue').classList.toggle('active', rankMode === 'value');
+}
+
+function setRankMode(mode) {
+  if (mode === 'value' && !canRankByValue()) return;
+  rankMode = mode;
+  renderRankPanel();
+  if (profileData) renderResults();
 }
 function setStatus(msg,type='') {
   const el=document.getElementById('statusMsg');
@@ -136,7 +230,8 @@ async function bulkGeocode(postcodes) {
 // ── Main analysis ─────────────────────────────────────────────────────────
 async function runAnalysis() {
   document.getElementById('analyseBtn').disabled=true;
-  const unique=[...new Set(rawData.map(pc=>pc.replace(/\s+/g,'').toUpperCase()))];
+  const rows = filteredRaw();
+  const unique=[...new Set(rows.map(r=>PDCSV.pcKey(r.postcode)))];
   const geo = await bulkGeocode(unique);
   setProgress(75,'Building profile…');
 
@@ -147,8 +242,9 @@ async function runAnalysis() {
   const SCOTTISH_AREAS=new Set(['AB','DD','DG','EH','FK','G','HS','IV','KA','KW','KY','ML','PA','PH','TD','ZE']);
   const NI_AREAS=new Set(['BT']);
   const CI_AREAS=new Set(['JE','GY','IM']);
-  for(const pc of rawData) {
-    const key=pc.replace(/\s+/g,'').toUpperCase();
+  for(const rec of rows) {
+    const pc=rec.postcode;
+    const key=PDCSV.pcKey(pc);
     const g=geo[key];
     if(!g||!g.valid){noGeo++;continue;}
     const d=districtOf(pc);
@@ -161,7 +257,8 @@ async function runAnalysis() {
       else { noDistrict++; missingDistricts[d]=(missingDistricts[d]||0)+1; }
       continue;
     }
-    enriched.push({pc,district:d,region:stats.region,imd:stats.imd,hp:stats.hp,rural:stats.rural,
+    // Spread the parsed record so name/value/group/ref reach the profile + exports
+    enriched.push({...rec,pc,district:d,region:stats.region,imd:stats.imd,hp:stats.hp,rural:stats.rural,
       age_young:stats.age_young||25,age_mid:stats.age_mid||40,age_older:stats.age_older||35,
       pct_prof:stats.pct_prof||30,pct_no_car:stats.pct_no_car||20,pct_degree:stats.pct_degree||25,
       lat:g.lat,lng:g.lng,adminDistrict:g.adminDistrict});
@@ -188,7 +285,7 @@ async function runAnalysis() {
     return;
   }
 
-  profileData={enriched,noData,noGeo,noDistrict,noScotland,missingNI,missingCI,missingDistricts,missingScotland,total:rawData.length,avgYoung,avgMid,avgOlder,avgProf,avgNoCar,avgDegree};
+  profileData={enriched,noData,noGeo,noDistrict,noScotland,missingNI,missingCI,missingDistricts,missingScotland,total:rows.length,avgYoung,avgMid,avgOlder,avgProf,avgNoCar,avgDegree};
   try {
     renderResults();
   } catch(e) {
@@ -199,8 +296,8 @@ async function runAnalysis() {
     return;
   }
   setProgress(100,'');
-  const matchPct_=Math.round(enriched.length/rawData.length*100);
-  setStatus(`Matched ${enriched.length.toLocaleString()} of ${rawData.length.toLocaleString()} postcodes (${matchPct_}%) across ${new Set(enriched.map(e=>e.district)).size} districts.`+(noGeo>0?' '+noGeo+' invalid postcodes.':'')+(noDistrict>0?' '+noDistrict+' districts not in lookup.':''),'success');
+  const matchPct_=Math.round(enriched.length/rows.length*100);
+  setStatus(`Matched ${enriched.length.toLocaleString()} of ${rows.length.toLocaleString()} postcodes (${matchPct_}%) across ${new Set(enriched.map(e=>e.district)).size} districts.`+(noGeo>0?' '+noGeo+' invalid postcodes.':'')+(noDistrict>0?' '+noDistrict+' districts not in lookup.':'')+(activeGroups?` Filtered to ${csvMeta.groupLabel}: ${[...activeGroups].join(', ')}.`:''),'success');
   document.getElementById('analyseBtn').disabled=false;
 }
 
@@ -233,10 +330,12 @@ function renderResults() {
   const regionSorted=Object.entries(regionDist).sort((a,b)=>b[1]-a[1]);
   const maxRegion=regionSorted[0]?.[1]||1;
 
-  // Top districts
-  const distCount={};
-  enriched.forEach(e=>distCount[e.district]=(distCount[e.district]||0)+1);
-  const topDists=Object.entries(distCount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  // Top districts — weighted by headcount or by value, per the rank toggle
+  const distGroups={};
+  enriched.forEach(e=>{ (distGroups[e.district]=distGroups[e.district]||[]).push(e); });
+  const topDists=Object.entries(distGroups)
+    .map(([d,list])=>[d,weightOf(list)])
+    .sort((a,b)=>b[1]-a[1]).slice(0,8);
 
   // Dominant characteristics for pen portrait
   const dominantImd=Math.round(avgImd);
@@ -373,14 +472,14 @@ function renderResults() {
   </div>
 
   <div class="card">
-    <div class="card-title">🔝 Top postcode districts</div>
+    <div class="card-title">🔝 Top postcode districts ${rankMode==='value'?`<span style="font-weight:400;font-size:10px;color:var(--muted)">by ${escHtml(csvMeta.valueLabel)}</span>`:''}</div>
     <div class="region-list">
       ${topDists.map(([d,c])=>{
         const stats=DISTRICT_DATA[d];
         return `<div class="region-item">
           <span class="region-name" style="font-family:'DM Mono',monospace;font-size:12px">${d} <span style="font-family:'DM Sans',sans-serif;font-size:10px;color:var(--muted)">${stats?stats.region:''}</span></span>
-          <div class="region-track"><div class="region-fill" style="width:${Math.round(c/topDists[0][1]*100)}%;background:var(--c1)"></div></div>
-          <span class="region-pct">${c}</span>
+          <div class="region-track"><div class="region-fill" style="width:${topDists[0][1]?Math.round(c/topDists[0][1]*100):0}%;background:var(--c1)"></div></div>
+          <span class="region-pct">${fmtWeight(c)}</span>
         </div>`;}).join('')}
     </div>
   </div>
@@ -963,14 +1062,34 @@ function exportRecs() {
 }
 function dlCSV(rows, name) {
   const a=document.createElement('a');
-  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(PDCSV.toCSV(rows));
   a.download=name; a.click();
 }
+
+/* Header names / cells for the CSV's extra columns, using the client's own
+   header text so exports read in their language. */
+function metaHeaders() {
+  const m=csvMeta, out=[];
+  if (m && m.hasName)  out.push(m.nameLabel);
+  if (m && m.hasValue) out.push(m.valueLabel);
+  if (m && m.hasGroup) out.push(m.groupLabel);
+  if (m && m.columns && m.columns.ref >= 0) out.push(m.headers[m.columns.ref] || 'ref');
+  return out;
+}
+function metaCells(r) {
+  const m=csvMeta, out=[];
+  if (m && m.hasName)  out.push(r.name || '');
+  if (m && m.hasValue) out.push(r.value != null ? r.value : '');
+  if (m && m.hasGroup) out.push(r.group || '');
+  if (m && m.columns && m.columns.ref >= 0) out.push(r.ref || '');
+  return out;
+}
+
 function exportProfile() {
   if(!profileData) return;
-  const rows=[['postcode','district','region','admin_district','imd_decile','hp_band','rural','lat','lng']];
+  const rows=[['postcode',...metaHeaders(),'district','region','admin_district','imd_decile','hp_band','rural','lat','lng']];
   for(const e of profileData.enriched)
-    rows.push([e.pc,e.district,e.region,e.adminDistrict,e.imd,e.hp,e.rural,e.lat,e.lng]);
+    rows.push([e.pc,...metaCells(e),e.district,e.region,e.adminDistrict,e.imd,e.hp,e.rural,e.lat,e.lng]);
   dlCSV(rows,'customer_profile.csv');
 }
 function exportLookalikes() {
@@ -1024,11 +1143,19 @@ function exportLookalikes() {
 // ── Clear ─────────────────────────────────────────────────────────────────
 function clearAll() {
   rawData=[]; profileData=null;
-  document.getElementById('fileInput').value='';
-  document.getElementById('pasteArea').value='';
-  document.getElementById('fileName').textContent='';
-  document.getElementById('uploadLabel').classList.remove('loaded');
-  document.getElementById('progressWrap').classList.remove('active');
+  csvMeta=null; activeGroups=null; rankMode='count';
+  const gp=document.getElementById('groupPanel');
+  if (gp) gp.style.display='none';
+  const rp=document.getElementById('rankPanel');
+  if (rp) rp.style.display='none';
+  // Client builds swap the upload label (and the file input inside it) for a
+  // dataset picker, so these elements are not guaranteed to exist.
+  const el = id => document.getElementById(id);
+  if (el('fileInput'))    el('fileInput').value='';
+  if (el('pasteArea'))    el('pasteArea').value='';
+  if (el('fileName'))     el('fileName').textContent='';
+  if (el('uploadLabel'))  el('uploadLabel').classList.remove('loaded');
+  if (el('progressWrap')) el('progressWrap').classList.remove('active');
   setStatus('Load customer postcodes to build a demographic profile and find lookalike areas.');
   checkReady();
   document.getElementById('content').innerHTML=`<div class="placeholder"><div class="icon">📊</div><p><strong>Paste your customer postcodes on the left</strong><br>The tool will profile your existing customer base by deprivation, house prices, urban/rural split and region — then find other areas of England with matching characteristics where you have no customers yet.</p></div>`;
@@ -2148,11 +2275,42 @@ function generateBrief() {
   const regionSorted = Object.entries(regionDist).sort((a,b)=>b[1]-a[1]);
   const maxRegion = regionSorted[0]?.[1]||1;
 
-  // Top districts
-  const distCount = {};
-  enriched.forEach(e=>{ distCount[e.district]=(distCount[e.district]||0)+1; });
-  const topDists = Object.entries(distCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  // Top districts — weighted by headcount or value, per the rank toggle
+  const distGroupsB = {};
+  enriched.forEach(e=>{ (distGroupsB[e.district]=distGroupsB[e.district]||[]).push(e); });
+  const topDists = Object.entries(distGroupsB)
+    .map(([d,list])=>[d,weightOf(list)])
+    .sort((a,b)=>b[1]-a[1]).slice(0,10);
   const maxDist = topDists[0]?.[1]||1;
+
+  // Value + group (e.g. AM) analysis — only when the upload carried those columns
+  const briefHasValue = canRankByValue();
+  const briefHasGroup = !!(csvMeta && csvMeta.hasGroup);
+  const valueLabelB = csvMeta ? csvMeta.valueLabel : 'Value';
+  const groupLabelB = csvMeta ? csvMeta.groupLabel : 'Group';
+  const totalValueB = briefHasValue ? PDCSV.sumValue(enriched) : 0;
+
+  let groupRowsB = [];
+  if (briefHasGroup) {
+    const gd = {};
+    enriched.forEach(e => {
+      const g = e.group || '—';
+      gd[g] = gd[g] || { count: 0, value: 0, districts: new Set(), imd: 0, hp: 0 };
+      gd[g].count++;
+      gd[g].districts.add(e.district);
+      gd[g].imd += e.imd;
+      gd[g].hp  += e.hp;
+      if (e.value != null) gd[g].value += e.value;
+    });
+    groupRowsB = Object.entries(gd)
+      .map(([g,s]) => ({ group:g, count:s.count, value:s.value, districts:s.districts.size,
+                         avgImd:(s.imd/s.count).toFixed(1), avgHp:(s.hp/s.count).toFixed(1) }))
+      .sort((a,b) => briefHasValue ? b.value - a.value : b.count - a.count);
+  }
+
+  const filterNoteB = activeGroups
+    ? ` · Filtered to ${groupLabelB}: ${[...activeGroups].join(', ')}`
+    : '';
 
   // IMD distribution
   const imdDist = {};
@@ -2285,7 +2443,7 @@ function generateBrief() {
     ${logoSrc ? `<img class="header-logo" src="${logoSrc}" alt="${agencyName}">` : `<div class="header-logo placeholder">${agencyName}</div>`}
     <div class="header-right">
       <div class="brief-title">Customer Intelligence Brief</div>
-      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite${escHtml(filterNoteB)}</div>
     </div>
   </div>
 
@@ -2372,15 +2530,41 @@ function generateBrief() {
         </div>`).join('')}
     </div>
     <div>
-      <div class="section-title">Top postcode districts</div>
+      <div class="section-title">Top postcode districts${rankMode==='value'?` by ${escHtml(valueLabelB)}`:''}</div>
       ${topDists.map(([d,c])=>`
         <div class="bar-row">
           <span class="bar-label" style="font-family:monospace;font-size:11px">${d}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(c/maxDist*100)}%;background:var(--primary)"></div></div>
-          <span class="bar-val">${c}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${maxDist?Math.round(c/maxDist*100):0}%;background:var(--primary)"></div></div>
+          <span class="bar-val">${fmtWeight(c)}</span>
         </div>`).join('')}
     </div>
   </div>
+
+  <!-- Breakdown by group (e.g. account manager) -->
+  ${groupRowsB.length?`
+  <div class="section-title">Breakdown by ${escHtml(groupLabelB)}</div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--bg);text-align:left">
+      <th style="padding:6px 8px">${escHtml(groupLabelB)}</th>
+      <th style="padding:6px 8px">Accounts</th>
+      ${briefHasValue?`<th style="padding:6px 8px">${escHtml(valueLabelB)}</th><th style="padding:6px 8px">Share</th>`:''}
+      <th style="padding:6px 8px">Districts</th>
+      <th style="padding:6px 8px">Avg IMD</th>
+      <th style="padding:6px 8px">Avg HP band</th>
+    </tr></thead>
+    <tbody>
+    ${groupRowsB.map(g=>`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-weight:500">${escHtml(g.group)}</td>
+      <td style="padding:6px 8px">${g.count.toLocaleString()}</td>
+      ${briefHasValue?`<td style="padding:6px 8px">${PDCSV.fmtValue(g.value)}</td>
+      <td style="padding:6px 8px">${totalValueB?Math.round(g.value/totalValueB*100):0}%</td>`:''}
+      <td style="padding:6px 8px">${g.districts}</td>
+      <td style="padding:6px 8px">${g.avgImd}</td>
+      <td style="padding:6px 8px">${g.avgHp}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>
+  <div style="font-size:10px;color:var(--muted);margin-top:6px">Avg IMD and house-price band show whether each ${escHtml(groupLabelB)}'s accounts sit in comparable areas — a large spread means territories are not like-for-like.</div>`:''}
 
   ${topLookalikes.length ? `
   <!-- Lookalike gap districts -->

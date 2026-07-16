@@ -81,7 +81,13 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
   window.pdSave_customers = function(data, name) {
     var all = _all();
     name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    // Persist the CSV column metadata alongside the rows, so a restored dataset
+    // keeps the client's own column labels (e.g. "Eleven Retail Net Sales").
+    var meta = null;
+    try {
+      if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+    } catch(e) {}
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
     localStorage.setItem(ACT_KEY, name);
   };
@@ -252,6 +258,7 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="pd_csv.js"></script>
 <script src="valid_sectors.js"></script>
 <script src="dwelling_data.js"></script>
 <script>
@@ -464,17 +471,9 @@ function extractPC(s) {
   return m ? normalisePC(m[1]) : null;
 }
 function parseCustomers(text) {
-  const lines = text.trim().split('\n').filter(l => l.trim());
-  const isHdr = l => /postcode|address|name|customer|email/i.test(l);
-  const start = lines.length && isHdr(lines[0]) ? 1 : 0;
-  customerData = [];
-  for (const line of lines.slice(start)) {
-    const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g,''));
-    let pc = null;
-    for (const p of parts) if (!pc) pc = extractPC(p);
-    if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
-    if (pc) customerData.push(pc);
-  }
+  // This tool works on bare postcodes; PDCSV is used for its quote-safe parsing
+  // and postcode-column detection. Extra columns are not carried through here.
+  customerData = PDCSV.records(text).records.map(r => r.postcode);
   const statusEl = document.getElementById('customer-status');
   statusEl.textContent = customerData.length ? customerData.length + ' postcodes ready' : '';
   const btn = document.getElementById('analyseBtn');

@@ -71,7 +71,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Customer Location Mapper — Pratt Digital · Eleven Australia</title>
+<title>Customer Location Mapper — Pratt Digital · ELEVEN Australia</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -204,7 +204,13 @@ textarea::placeholder { color: var(--muted); }
   window.pdSave_customers = function(data, name) {
     var all = _all();
     name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    // Persist the CSV column metadata alongside the rows, so a restored dataset
+    // keeps the client's own column labels (e.g. "Eleven Retail Net Sales").
+    var meta = null;
+    try {
+      if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+    } catch(e) {}
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
     localStorage.setItem(ACT_KEY, name);
   };
@@ -254,7 +260,7 @@ textarea::placeholder { color: var(--muted); }
       </label>
       <div class="divider">or paste directly</div>
       <textarea id="pasteArea" placeholder="NN7 2JR&#10;DE7 8DX&#10;SG17 5FZ&#10;RG22 5PL&#10;&#10;(headers optional — postcode auto-detected)"></textarea>
-      <div class="format-hint">One postcode per row. CSV OK — postcode column auto-detected.<br>Example: <code>SW1A 2AA</code> or <code>name,email,postcode</code></div>
+      <div class="format-hint">One postcode per row. CSV OK — postcode column auto-detected.<br>Example: <code>SW1A 2AA</code> or <code>name,email,postcode</code><br>Name, revenue/value and owner (e.g. <code>AM</code>) columns are detected too, and flow into popups, exports and the brief.</div>
       <div style="margin-top:7px"><button class="btn-sample" onclick="loadSample()">↗ Load sample postcodes to test</button></div>
     </div>
 
@@ -269,6 +275,18 @@ textarea::placeholder { color: var(--muted); }
     </div>
 
     <div id="statusMsg" class="status-msg">Load postcodes to begin.</div>
+
+    <div id="groupPanel" style="display:none">
+      <div class="section-label">
+        <span id="groupPanelLabel">Filter</span>
+        <span style="font-weight:400;font-size:9px;color:var(--muted)">— map, summary and exports all respect this</span>
+      </div>
+      <div id="groupList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;font-size:11px"></div>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button class="btn-sample" style="flex:1" onclick="setAllGroups(true)">Select all</button>
+        <button class="btn-sample" style="flex:1" onclick="setAllGroups(false)">Clear</button>
+      </div>
+    </div>
 
     <div id="statsPanel" style="display:none">
       <div class="section-label">Summary</div>
@@ -309,6 +327,7 @@ textarea::placeholder { color: var(--muted); }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="../../valid_sectors.js"></script>
+<script src="../../pd_csv.js"></script>
 <script>
 /*
  (c) 2014, Vladimir Agafonkin
@@ -342,6 +361,8 @@ textarea::placeholder { color: var(--muted); }
   } catch(e) {}
 })();
 let map, customerData = [], resultData = [], geocodeCache = {};
+let csvMeta = null;        // PDCSV parse metadata: which columns were found
+let activeGroups = null;   // Set of active group (e.g. AM) values; null = all
 let dotLayer = null, heatLayer = null, districtLayer = null;
 let layerState = { dots: false, heat: false, district: false };
 
@@ -396,24 +417,83 @@ function extractPC(s) {
   return m ? normalisePC(m[1]) : null;
 }
 function parseCSV(text) {
-  const lines = text.trim().split('\n').filter(l => l.trim());
-  if (!lines.length) { customerData = []; checkReady(); return; }
-  const isHdr = l => /postcode|address|name|customer|email|order/i.test(l);
-  const start = isHdr(lines[0]) ? 1 : 0;
-  const seen = new Set();
-  customerData = [];
-  for (const line of lines.slice(start)) {
-    const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g,''));
-    let pc = null;
-    for (const p of parts) { if (!pc) pc = extractPC(p); }
-    if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
-    if (pc) { customerData.push({ postcode: pc }); seen.add(pc); }
-  }
-  setStatus(`${customerData.length} rows loaded — ${seen.size} unique postcodes.`);
+  const parsed = PDCSV.records(text);
+  customerData = parsed.records;
+  csvMeta = parsed;
+  activeGroups = null;   // a new upload resets any territory filter
+  const seen = new Set(customerData.map(c => c.postcode));
+
+  const bits = [];
+  if (parsed.hasName)  bits.push(parsed.nameLabel);
+  if (parsed.hasValue) bits.push(parsed.valueLabel);
+  if (parsed.hasGroup) bits.push(parsed.groupLabel);
+  setStatus(`${customerData.length} rows loaded — ${seen.size} unique postcodes.` +
+            (bits.length ? ` Columns: ${bits.join(', ')}.` : ''));
+  renderGroupFilter();
   checkReady();
 }
 function checkReady() {
   document.getElementById('plotBtn').disabled = customerData.length === 0;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+}
+
+/* Client builds restore saved datasets straight from localStorage, bypassing
+   parseCSV — these hooks let the stored dataset carry its column metadata so
+   popups, the filter and exports keep working (and keep the client's own
+   column labels) after a reload. */
+window.pdCaptureMeta = function() { return csvMeta; };
+window.pdRestoreMeta = function(saved) {
+  csvMeta = PDCSV.metaFromRecords(customerData, saved);
+  activeGroups = null;
+  renderGroupFilter();
+};
+
+// ── Group (e.g. account manager) filter ───────────────────────────────────
+function inGroup(r) {
+  if (!activeGroups) return true;
+  if (!csvMeta || !csvMeta.hasGroup) return true;
+  return !!r.group && activeGroups.has(r.group);
+}
+
+/* Show a checkbox per group value with its record count and total value.
+   Hidden entirely when the upload has no group column. */
+function renderGroupFilter() {
+  const panel = document.getElementById('groupPanel');
+  if (!panel) return;
+  const groups = PDCSV.groupsOf(customerData);
+  if (groups.length < 2) { panel.style.display = 'none'; return; }
+
+  document.getElementById('groupPanelLabel').textContent = 'Filter by ' + csvMeta.groupLabel;
+  panel.style.display = 'block';
+  document.getElementById('groupList').innerHTML = groups.map(g => {
+    const recs = customerData.filter(r => r.group === g);
+    const on = !activeGroups || activeGroups.has(g);
+    const val = csvMeta.hasValue ? PDCSV.sumValue(recs) : null;
+    return `<label style="display:flex;align-items:center;gap:6px;padding:3px 2px;cursor:pointer">
+      <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleGroup(${JSON.stringify(g).replace(/"/g,'&quot;')}, this.checked)">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g)}</span>
+      <span style="color:var(--muted);font-size:10px">${recs.length}${val ? ' · ' + PDCSV.fmtValue(val) : ''}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleGroup(g, on) {
+  const groups = PDCSV.groupsOf(customerData);
+  if (!activeGroups) activeGroups = new Set(groups);
+  if (on) activeGroups.add(g); else activeGroups.delete(g);
+  if (activeGroups.size === groups.length) activeGroups = null;
+  renderGroupFilter();
+  if (resultData.length || Object.keys(geocodeCache).length) runAnalysis();
+}
+
+function setAllGroups(on) {
+  activeGroups = on ? null : new Set();
+  renderGroupFilter();
+  if (resultData.length || Object.keys(geocodeCache).length) runAnalysis();
 }
 
 // ── Status / progress ─────────────────────────────────────────────────────
@@ -462,17 +542,22 @@ async function runAnalysis() {
   document.getElementById('plotBtn').disabled = true;
   removeLayers();
 
-  const unique = [...new Set(customerData.map(c => c.postcode.replace(/\s+/g,'').toUpperCase()))];
-  const geo = await bulkGeocode(unique);
+  // Only the rows passing the group filter are plotted, counted and exported.
+  const rows = customerData.filter(inGroup);
+  const unique = [...new Set(rows.map(c => PDCSV.pcKey(c.postcode)))];
+  // Cache geocodes so changing the filter doesn't re-hit the API.
+  const missing = unique.filter(k => !(k in geocodeCache));
+  if (missing.length) Object.assign(geocodeCache, await bulkGeocode(missing));
 
   resultData = [];
   let failed = 0;
   const bounds = [];
-  for (const c of customerData) {
-    const key = c.postcode.replace(/\s+/g,'').toUpperCase();
-    const loc = geo[key];
+  for (const c of rows) {
+    const key = PDCSV.pcKey(c.postcode);
+    const loc = geocodeCache[key];
     if (loc && loc.valid && loc.lat != null && loc.lng != null) {
-      resultData.push({ postcode: c.postcode, lat: loc.lat, lng: loc.lng,
+      // Spread the parsed record so name/value/group/ref reach popups + exports.
+      resultData.push({ ...c, lat: loc.lat, lng: loc.lng,
         district: c.postcode.replace(/\s.*/,''),
         sector: c.postcode.replace(/\s.*/,'') + ' ' + (c.postcode.split(' ')[1]?.[0] || ''),
         adminDistrict: loc.district, region: loc.region });
@@ -500,12 +585,13 @@ async function runAnalysis() {
     <div class="stat"><div class="num">${unique.length.toLocaleString()}</div><div class="lbl">Unique postcodes</div></div>
     <div class="stat"><div class="num">${Object.keys(dc).length}</div><div class="lbl">Districts covered</div></div>
     <div class="stat"><div class="num">${top[0]?.[0]||'—'}</div><div class="lbl">Top district</div></div>
+    ${csvMeta && csvMeta.hasValue ? `<div class="stat"><div class="num">${PDCSV.fmtValue(PDCSV.sumValue(resultData))}</div><div class="lbl">${esc(csvMeta.valueLabel)}</div></div>` : ''}
     ${failed > 0 ? `<div class="stat"><div class="num" style="color:var(--red)">${failed}</div><div class="lbl">Not geocoded</div></div>` : ''}`;
 
   document.getElementById('topPanel').style.display = 'block';
   renderTopList('district');
 
-  setStatus(`✓ ${resultData.length.toLocaleString()} of ${customerData.length.toLocaleString()} customers plotted across ${Object.keys(dc).length} districts.${failed > 0 ? ` ${failed} could not be geocoded.` : ''}`, 'success');
+  setStatus(`✓ ${resultData.length.toLocaleString()} of ${rows.length.toLocaleString()} customers plotted across ${Object.keys(dc).length} districts.${failed > 0 ? ` ${failed} could not be geocoded.` : ''}${activeGroups ? ` Filtered to ${csvMeta.groupLabel}: ${[...activeGroups].join(', ')}.` : ''}`, 'success');
   document.getElementById('plotBtn').disabled = false;
 }
 
@@ -573,7 +659,10 @@ function buildDotLayer() {
     L.circleMarker([r.lat + jitter(), r.lng + jitter()], {
       radius: 3, fillColor: '#4c565c', color: '#4c565c',
       fillOpacity: 0.65, weight: 0, renderer
-    }).bindPopup(`<strong>${r.postcode}</strong><br>${r.adminDistrict}<br>${r.region}`).addTo(lg);
+    }).bindPopup(`<strong>${esc(r.name || r.postcode)}</strong><br>
+      ${r.name ? esc(r.postcode) + '<br>' : ''}${esc(r.adminDistrict)}<br>${esc(r.region)}
+      ${r.value != null ? '<br>' + esc(csvMeta.valueLabel) + ': <strong>' + PDCSV.fmtValue(r.value) + '</strong>' : ''}
+      ${r.group ? '<br>' + esc(csvMeta.groupLabel) + ': ' + esc(r.group) : ''}`).addTo(lg);
   }
   dotLayer = lg;
   lg.addTo(map);
@@ -624,6 +713,8 @@ function buildDistrictLayer() {
 function clearAll() {
   removeLayers();
   customerData = []; resultData = [];
+  csvMeta = null; activeGroups = null; geocodeCache = {};
+  document.getElementById('groupPanel').style.display = 'none';
   layerState = { dots: false, heat: false, district: false };
   updateButtons();
   document.getElementById('fileInput').value = '';
@@ -688,9 +779,52 @@ function generateCustomerBrief() {
   const top3pct   = Math.round(top3count/totalMapped*100);
   const concentrated = top3pct > 40;
 
+  // Value + group (e.g. AM) analysis — only when the upload carried those columns
+  const briefHasValue = !!(csvMeta && csvMeta.hasValue);
+  const briefHasGroup = !!(csvMeta && csvMeta.hasGroup);
+  const valueLabel = csvMeta ? csvMeta.valueLabel : 'Value';
+  const groupLabel = csvMeta ? csvMeta.groupLabel : 'Group';
+  const totalValue = briefHasValue ? PDCSV.sumValue(resultData) : 0;
+
+  // Value by district, so the brief can rank on revenue rather than headcount
+  const dv = {};
+  if (briefHasValue) {
+    for (const r of resultData) dv[r.district] = (dv[r.district]||0) + (r.value||0);
+  }
+  const topValueDists = briefHasValue
+    ? Object.entries(dv).sort((a,b)=>b[1]-a[1]).slice(0,12) : [];
+  const maxValueDist = topValueDists[0]?.[1] || 1;
+
+  let groupRows = [];
+  if (briefHasGroup) {
+    const gd = {};
+    resultData.forEach(r => {
+      const g = r.group || '—';
+      gd[g] = gd[g] || { count: 0, value: 0, districts: new Set() };
+      gd[g].count++;
+      gd[g].districts.add(r.district);
+      if (r.value != null) gd[g].value += r.value;
+    });
+    groupRows = Object.entries(gd)
+      .map(([g, s]) => ({ group: g, count: s.count, value: s.value, districts: s.districts.size }))
+      .sort((a,b) => briefHasValue ? b.value - a.value : b.count - a.count);
+  }
+
+  const filterNote = activeGroups
+    ? ` · Filtered to ${groupLabel}: ${[...activeGroups].join(', ')}`
+    : '';
+
   // Insights
   const insights = [];
-  insights.push(`Customer base of <strong>${totalMapped.toLocaleString()}</strong> postcodes spans <strong>${Object.keys(dc).length} districts</strong> across <strong>${topRegions.length} regions</strong>.`);
+  insights.push(`Customer base of <strong>${totalMapped.toLocaleString()}</strong> postcodes spans <strong>${Object.keys(dc).length} districts</strong> across <strong>${topRegions.length} regions</strong>${briefHasValue ? `, worth <strong>${PDCSV.fmtValue(totalValue)}</strong> in ${esc(valueLabel)}` : ''}.`);
+  if (briefHasValue && topValueDists.length) {
+    const [tvd, tvv] = topValueDists[0];
+    insights.push(`<strong>${tvd}</strong> is the highest-value district at <strong>${PDCSV.fmtValue(tvv)}</strong> (${Math.round(tvv/totalValue*100)}% of total) — note this can differ from the highest-count district.`);
+  }
+  if (briefHasGroup && groupRows.length > 1) {
+    const top = groupRows[0];
+    insights.push(`<strong>${esc(top.group)}</strong> is the largest ${esc(groupLabel)} ${briefHasValue ? `by ${esc(valueLabel)} (${PDCSV.fmtValue(top.value)} across ${top.count} accounts)` : `by account count (${top.count})`}, covering ${top.districts} districts.`);
+  }
   if (concentrated) {
     insights.push(`Top 3 districts (${top12.slice(0,3).map(([d])=>d).join(', ')}) account for <strong>${top3pct}%</strong> of customers — highly concentrated base.`);
   } else {
@@ -757,7 +891,7 @@ function generateCustomerBrief() {
     ${logoSrc?`<img class="header-logo" src="${logoSrc}" alt="${agencyName}">`:`<div class="header-logo placeholder">${agencyName}</div>`}
     <div class="header-right">
       <div class="brief-title">Customer Location Analysis</div>
-      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite${esc(filterNote)}</div>
     </div>
   </div>
 
@@ -784,6 +918,12 @@ function generateCustomerBrief() {
       <div class="val">${topRegions.length}</div>
       <div class="sub">Top: ${topRegions[0]?.[0]||'—'}</div>
     </div>
+    ${briefHasValue?`
+    <div class="stat-card">
+      <h4>${esc(valueLabel)}</h4>
+      <div class="val">${PDCSV.fmtValue(totalValue)}</div>
+      <div class="sub">Across ${totalMapped.toLocaleString()} mapped records</div>
+    </div>`:''}
   </div>
 
   <!-- Insights -->
@@ -792,10 +932,41 @@ function generateCustomerBrief() {
     ${insights.map(i=>`<div class="insight-item">${i}</div>`).join('')}
   </div>
 
+  <!-- Breakdown by group (e.g. account manager) -->
+  ${groupRows.length?`
+  <div class="section-title">Breakdown by ${esc(groupLabel)}</div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--bg);text-align:left">
+      <th style="padding:6px 8px">${esc(groupLabel)}</th>
+      <th style="padding:6px 8px">Accounts</th>
+      ${briefHasValue?`<th style="padding:6px 8px">${esc(valueLabel)}</th><th style="padding:6px 8px">Share</th>`:''}
+      <th style="padding:6px 8px">Districts</th>
+    </tr></thead>
+    <tbody>
+    ${groupRows.map(g=>`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-weight:500">${esc(g.group)}</td>
+      <td style="padding:6px 8px">${g.count.toLocaleString()}</td>
+      ${briefHasValue?`<td style="padding:6px 8px">${PDCSV.fmtValue(g.value)}</td>
+      <td style="padding:6px 8px">${totalValue?Math.round(g.value/totalValue*100):0}%</td>`:''}
+      <td style="padding:6px 8px">${g.districts}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>`:''}
+
+  <!-- Top districts by value -->
+  ${topValueDists.length?`
+  <div class="section-title">Top districts by ${esc(valueLabel)}</div>
+  ${topValueDists.map(([d,v])=>`
+    <div class="bar-row">
+      <span class="bar-label mono">${d}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/maxValueDist*100)}%;background:var(--secondary,var(--primary))"></div></div>
+      <span class="bar-val">${PDCSV.fmtValue(v)}</span>
+    </div>`).join('')}`:''}
+
   <!-- Top districts + regions side by side -->
   <div class="two-col">
     <div>
-      <div class="section-title">Top postcode districts</div>
+      <div class="section-title">Top postcode districts${briefHasValue?' by count':''}</div>
       ${top12.map(([d,c])=>`
         <div class="bar-row">
           <span class="bar-label mono">${d}</span>
@@ -846,31 +1017,81 @@ function generateCustomerBrief() {
 function exportCSV() {
   if (!resultData.length) { alert('Run analysis first.'); return; }
 
-  // Sheet 1: by district
+  const hasValue = !!(csvMeta && csvMeta.hasValue);
+  const hasGroup = !!(csvMeta && csvMeta.hasGroup);
+  const hasName  = !!(csvMeta && csvMeta.hasName);
+  const hasRef   = !!(csvMeta && csvMeta.columns.ref >= 0);
+  const valueLbl = hasValue ? csvMeta.valueLabel : 'Value';
+  const groupLbl = hasGroup ? csvMeta.groupLabel : 'Group';
+
+  // Sheet 1: one row per record, carrying every column from the upload
+  const recHead = ['Postcode'];
+  if (hasName)  recHead.push(csvMeta.nameLabel);
+  if (hasValue) recHead.push(valueLbl);
+  if (hasGroup) recHead.push(groupLbl);
+  if (hasRef)   recHead.push(csvMeta.headers[csvMeta.columns.ref] || 'Ref');
+  recHead.push('District', 'Sector', 'Admin District', 'Region', 'Lat', 'Lng');
+
+  const recordRows = [recHead];
+  for (const r of resultData) {
+    const row = [r.postcode];
+    if (hasName)  row.push(r.name || '');
+    if (hasValue) row.push(r.value != null ? r.value : '');
+    if (hasGroup) row.push(r.group || '');
+    if (hasRef)   row.push(r.ref || '');
+    row.push(r.district, r.sector, r.adminDistrict, r.region, r.lat, r.lng);
+    recordRows.push(row);
+  }
+
+  // Sheet 2: by district
   const dd = {};
   for (const r of resultData) {
-    if (!dd[r.district]) dd[r.district] = { count: 0, region: r.region, adminDistrict: r.adminDistrict };
+    if (!dd[r.district]) dd[r.district] = { count: 0, value: 0, region: r.region, adminDistrict: r.adminDistrict };
     dd[r.district].count++;
+    if (r.value != null) dd[r.district].value += r.value;
   }
-  const districtRows = [['District', 'Customer Count', 'Region', 'Admin District']];
+  const districtRows = [['District', 'Customer Count', ...(hasValue ? [valueLbl] : []), 'Region', 'Admin District']];
   Object.entries(dd)
-    .sort((a, b) => b[1].count - a[1].count)
-    .forEach(([district, info]) => districtRows.push([district, info.count, info.region, info.adminDistrict]));
+    .sort((a, b) => hasValue ? b[1].value - a[1].value : b[1].count - a[1].count)
+    .forEach(([district, info]) => districtRows.push(
+      [district, info.count, ...(hasValue ? [info.value] : []), info.region, info.adminDistrict]));
 
-  // Sheet 2: by sector
+  // Sheet 3: by sector
   const sd = {};
   for (const r of resultData) {
-    if (!sd[r.sector]) sd[r.sector] = { count: 0, district: r.district, region: r.region };
+    if (!sd[r.sector]) sd[r.sector] = { count: 0, value: 0, district: r.district, region: r.region };
     sd[r.sector].count++;
+    if (r.value != null) sd[r.sector].value += r.value;
   }
-  const sectorRows = [['Sector', 'Customer Count', 'District', 'Region']];
+  const sectorRows = [['Sector', 'Customer Count', ...(hasValue ? [valueLbl] : []), 'District', 'Region']];
   Object.entries(sd)
-    .sort((a, b) => b[1].count - a[1].count)
-    .forEach(([sector, info]) => sectorRows.push([sector, info.count, info.district, info.region]));
+    .sort((a, b) => hasValue ? b[1].value - a[1].value : b[1].count - a[1].count)
+    .forEach(([sector, info]) => sectorRows.push(
+      [sector, info.count, ...(hasValue ? [info.value] : []), info.district, info.region]));
 
   const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(recordRows), 'Customers');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(districtRows), 'Districts');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sectorRows), 'Sectors');
+
+  // Sheet 4: by group (e.g. account manager)
+  if (hasGroup) {
+    const gd = {};
+    for (const r of resultData) {
+      const g = r.group || '—';
+      if (!gd[g]) gd[g] = { count: 0, value: 0, districts: new Set() };
+      gd[g].count++;
+      gd[g].districts.add(r.district);
+      if (r.value != null) gd[g].value += r.value;
+    }
+    const groupRows = [[groupLbl, 'Customer Count', ...(hasValue ? [valueLbl] : []), 'Districts Covered']];
+    Object.entries(gd)
+      .sort((a, b) => hasValue ? b[1].value - a[1].value : b[1].count - a[1].count)
+      .forEach(([g, info]) => groupRows.push(
+        [g, info.count, ...(hasValue ? [info.value] : []), info.districts.size]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(groupRows), 'By ' + groupLbl.slice(0, 25));
+  }
+
   XLSX.writeFile(wb, 'customer_locations.xlsx');
 }
 
@@ -961,7 +1182,7 @@ function loadSample() {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof customerData !== 'undefined') customerData = data;
-    if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof checkReady==="function") checkReady();
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -1007,7 +1228,7 @@ function loadSample() {
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof checkReady==="function") checkReady();
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  customerData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c)};  });}if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
       }
     }
   });

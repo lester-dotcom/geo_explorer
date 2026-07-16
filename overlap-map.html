@@ -127,7 +127,13 @@ textarea::placeholder { color: var(--muted); }
   window.pdSave_customers = function(data, name) {
     var all = _all();
     name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    // Persist the CSV column metadata alongside the rows, so a restored dataset
+    // keeps the client's own column labels (e.g. "Eleven Retail Net Sales").
+    var meta = null;
+    try {
+      if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+    } catch(e) {}
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
     localStorage.setItem(ACT_KEY, name);
   };
@@ -179,7 +185,7 @@ textarea::placeholder { color: var(--muted); }
           <div class="fn" id="fn-c"></div>
         </label>
         <textarea id="pa-c" placeholder="Paste postcodes here&#10;SW1A 2AA&#10;M1 1AE…"></textarea>
-        <div class="format-hint">One postcode per row. Headers optional. Extra columns ignored.</div>
+        <div class="format-hint">One postcode per row. Headers optional. Columns for name, a revenue/value figure and an owner (e.g. <code>AM</code>) are picked up automatically and carried into popups, exports and the brief.</div>
         <button class="btn-sample" onclick="loadSample('c')">↗ Load sample customer data</button>
       </div>
     </div>
@@ -197,7 +203,7 @@ textarea::placeholder { color: var(--muted); }
           <div class="fn" id="fn-l"></div>
         </label>
         <textarea id="pa-l" placeholder="name,postcode (name optional)&#10;Bond Street,W1S 1NB&#10;Manchester,M3 2BQ"></textarea>
-        <div class="format-hint">Include a <code>name</code> column for labels on map. Postcode required.</div>
+        <div class="format-hint">Include a <code>name</code> column for labels on map. Postcode required. Revenue and owner columns are picked up here too.</div>
         <button class="btn-sample" onclick="loadSample('l')">↗ Load sample salon data</button>
       </div>
     </div>
@@ -213,6 +219,18 @@ textarea::placeholder { color: var(--muted); }
     </div>
 
     <div id="statusMsg" class="status-msg">Load at least one dataset to begin. Both datasets enable overlap analysis.</div>
+
+    <div id="groupPanel" style="display:none">
+      <div class="section-label">
+        <span id="groupPanelLabel">Filter</span>
+        <span style="font-weight:400;font-size:9px;color:var(--muted)">— everything below and all exports respect this</span>
+      </div>
+      <div id="groupList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border,#e5e7eb);border-radius:6px;padding:6px;font-size:11px"></div>
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button class="btn-sample" style="flex:1" onclick="setAllGroups(true)">Select all</button>
+        <button class="btn-sample" style="flex:1" onclick="setAllGroups(false)">Clear</button>
+      </div>
+    </div>
 
     <div id="statsPanel" style="display:none">
       <div class="section-label">Overlap summary</div>
@@ -276,6 +294,7 @@ textarea::placeholder { color: var(--muted); }
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="pd_csv.js"></script>
 <script>
 !function(){"use strict";function t(i){return this instanceof t?(this._canvas=i="string"==typeof i?document.getElementById(i):i,this._ctx=i.getContext("2d"),this._width=i.width,this._height=i.height,this._max=1,void this.clear()):new t(i)}t.prototype={defaultRadius:25,defaultGradient:{.4:"blue",.6:"cyan",.7:"lime",.8:"yellow",1:"red"},data:function(t,i){return this._data=t,this},max:function(t){return this._max=t,this},add:function(t){return this._data.push(t),this},clear:function(){return this._data=[],this},radius:function(t,i){i=i||15;var a=this._circle=document.createElement("canvas"),s=a.getContext("2d"),e=this._r=t+i;return a.width=a.height=2*e,s.shadowOffsetX=s.shadowOffsetY=200,s.shadowBlur=i,s.shadowColor="black",s.beginPath(),s.arc(e-200,e-200,t,0,2*Math.PI,!0),s.closePath(),s.fill(),this},gradient:function(t){var i=document.createElement("canvas"),a=i.getContext("2d"),s=a.createLinearGradient(0,0,0,256);i.width=1,i.height=256;for(var e in t)s.addColorStop(e,t[e]);return a.fillStyle=s,a.fillRect(0,0,1,256),this._grad=a.getImageData(0,0,1,256).data,this},draw:function(t){this._circle||this.radius(this.defaultRadius),this._grad||this.gradient(this.defaultGradient);var i=this._ctx;i.clearRect(0,0,this._width,this._height);for(var a,s=0,e=this._data.length;e>s;s++)a=this._data[s],i.globalAlpha=Math.max(a[2]/this._max,t||.05),i.drawImage(this._circle,a[0]-this._r,a[1]-this._r);var n=i.getImageData(0,0,this._width,this._height);return this._colorize(n.data,this._grad),i.putImageData(n,0,0),this},_colorize:function(t,i){for(var a,s=3,e=t.length;e>s;s+=4)a=4*t[s],a&&(t[s-3]=i[a],t[s-2]=i[a+1],t[s-1]=i[a+2])}},window.simpleheat=t}();L.HeatLayer=(L.Layer?L.Layer:L.Class).extend({initialize:function(t,i){this._latlngs=t,L.setOptions(this,i)},setLatLngs:function(t){return this._latlngs=t,this.redraw()},addLatLng:function(t){return this._latlngs.push(t),this.redraw()},setOptions:function(t){return L.setOptions(this,t),this._heat&&this._updateOptions(),this.redraw()},redraw:function(){return!this._heat||this._frame||this._map._animating||(this._frame=L.Util.requestAnimFrame(this._redraw,this)),this},onAdd:function(t){this._map=t,this._canvas||this._initCanvas(),t._panes.overlayPane.appendChild(this._canvas),t.on("moveend",this._reset,this),t.options.zoomAnimation&&L.Browser.any3d&&t.on("zoomanim",this._animateZoom,this),this._reset()},onRemove:function(t){t.getPanes().overlayPane.removeChild(this._canvas),t.off("moveend",this._reset,this),t.options.zoomAnimation&&t.off("zoomanim",this._animateZoom,this)},addTo:function(t){return t.addLayer(this),this},_initCanvas:function(){var t=this._canvas=L.DomUtil.create("canvas","leaflet-heatmap-layer leaflet-layer"),i=L.DomUtil.testProp(["transformOrigin","WebkitTransformOrigin","msTransformOrigin"]);t.style[i]="50% 50%";var a=this._map.getSize();t.width=a.x,t.height=a.y;var s=this._map.options.zoomAnimation&&L.Browser.any3d;L.DomUtil.addClass(t,"leaflet-zoom-"+(s?"animated":"hide")),this._heat=simpleheat(t),this._updateOptions()},_updateOptions:function(){this._heat.radius(this.options.radius||this._heat.defaultRadius,this.options.blur),this.options.gradient&&this._heat.gradient(this.options.gradient),this.options.max&&this._heat.max(this.options.max)},_reset:function(){var t=this._map.containerPointToLayerPoint([0,0]);L.DomUtil.setPosition(this._canvas,t);var i=this._map.getSize();this._heat._width!==i.x&&(this._canvas.width=this._heat._width=i.x),this._heat._height!==i.y&&(this._canvas.height=this._heat._height=i.y),this._redraw()},_redraw:function(){var t,i,a,s,e,n,h,o,r,d=[],_=this._heat._r,l=this._map.getSize(),m=new L.Bounds(L.point([-_,-_]),l.add([_,_])),c=void 0===this.options.max?1:this.options.max,u=void 0===this.options.maxZoom?this._map.getMaxZoom():this.options.maxZoom,f=1/Math.pow(2,Math.max(0,Math.min(u-this._map.getZoom(),12))),g=_/2,p=[],v=this._map._getMapPanePos(),w=v.x%g,y=v.y%g;for(t=0,i=this._latlngs.length;i>t;t++)if(a=this._map.latLngToContainerPoint(this._latlngs[t]),m.contains(a)){e=Math.floor((a.x-w)/g)+2,n=Math.floor((a.y-y)/g)+2;var x=void 0!==this._latlngs[t].alt?this._latlngs[t].alt:void 0!==this._latlngs[t][2]?+this._latlngs[t][2]:1;r=x*f,p[n]=p[n]||[],s=p[n][e],s?(s[0]=(s[0]*s[2]+a.x*r)/(s[2]+r),s[1]=(s[1]*s[2]+a.y*r)/(s[2]+r),s[2]+=r):p[n][e]=[a.x,a.y,r]}for(t=0,i=p.length;i>t;t++)if(p[t])for(h=0,o=p[t].length;o>h;h++)s=p[t][h],s&&d.push([Math.round(s[0]),Math.round(s[1]),Math.min(s[2],c)]);this._heat.data(d).draw(this.options.minOpacity),this._frame=null},_animateZoom:function(t){var i=this._map.getZoomScale(t.zoom),a=this._map._getCenterOffset(t.center)._multiplyBy(-i).subtract(this._map._getMapPanePos());L.DomUtil.setTransform?L.DomUtil.setTransform(this._canvas,a,i):this._canvas.style[L.DomUtil.TRANSFORM]=L.DomUtil.getTranslateString(a)+" scale("+i+")"}}),L.heatLayer=function(t,i){return new L.HeatLayer(t,i)};
 </script>
@@ -307,7 +326,9 @@ textarea::placeholder { color: var(--muted); }
 })();
 let map;
 let cData = [], lData = [];       // parsed postcode rows
-let cResult = [], lResult = [];   // geocoded results
+let cResult = [], lResult = [];   // geocoded results (filtered by activeGroups)
+let cMeta = null, lMeta = null;   // PDCSV parse metadata: which columns were found
+let activeGroups = null;          // Set of active group (e.g. AM) values; null = all
 let geocodeCache = {};
 let radiusMiles = 10;
 
@@ -365,45 +386,132 @@ document.getElementById('pa-c').addEventListener('input', function() { parseCSV(
 document.getElementById('pa-l').addEventListener('input', function() { parseCSV(this.value, 'l'); });
 
 // ── Parsing ───────────────────────────────────────────────────────────────
-function normalisePC(s) {
-  if (!s) return null;
-  const c = s.replace(/\s+/g,'').toUpperCase();
-  if (c.length >= 5 && c.length <= 7) return c.slice(0,-3) + ' ' + c.slice(-3);
-  return null;
-}
-function extractPC(s) {
-  const m = s.match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
-  return m ? normalisePC(m[1]) : null;
-}
+function normalisePC(s) { return PDCSV.normalisePC(s); }
+function extractPC(s)   { return PDCSV.extractPC(s); }
+
 function parseCSV(text, ds) {
-  const lines = text.trim().split('\n').filter(l => l.trim());
-  if (!lines.length) { if (ds==='c') cData=[]; else lData=[]; checkReady(); return; }
-  const isHdr = l => /postcode|address|name|customer|email|order|salon|store|location/i.test(l);
-  const start = isHdr(lines[0]) ? 1 : 0;
-  // detect name column if present
-  const hasName = isHdr(lines[0]) && /name|salon|store|location/i.test(lines[0]);
-  const rows = [];
-  for (const line of lines.slice(start)) {
-    const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g,''));
-    let pc = null;
-    for (const p of parts) { if (!pc) pc = extractPC(p); }
-    if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
-    if (pc) {
-      const name = hasName ? parts[0] : null;
-      rows.push({ postcode: pc, name });
-    }
-  }
+  const parsed = PDCSV.records(text);
+  const rows = parsed.records;
   if (ds === 'c') {
-    cData = rows;
-    setStatus(`${rows.length} customer rows loaded.`);
+    cData = rows; cMeta = parsed;
+    setStatus(`${rows.length} customer rows loaded.${describeCols(parsed)}`);
   } else {
-    lData = rows;
-    setStatus(`${rows.length} location rows loaded.`);
+    lData = rows; lMeta = parsed;
+    setStatus(`${rows.length} location rows loaded.${describeCols(parsed)}`);
   }
+  activeGroups = null;   // a new upload resets any territory filter
+  renderGroupFilter();
   checkReady();
+}
+
+/* Tell the user which extra columns were picked up, so a mis-detected header
+   is obvious at upload time rather than in the export. */
+function describeCols(p) {
+  const bits = [];
+  if (p.hasName)  bits.push(p.nameLabel);
+  if (p.hasValue) bits.push(p.valueLabel);
+  if (p.hasGroup) bits.push(p.groupLabel);
+  return bits.length ? ` Columns: ${bits.join(', ')}.` : '';
 }
 function checkReady() {
   document.getElementById('plotBtn').disabled = (cData.length === 0 && lData.length === 0);
+}
+
+/* Client builds restore saved datasets straight from localStorage, bypassing
+   parseCSV — these hooks let each stored dataset carry its column metadata so
+   popups, the filter and exports keep working (and keep the client's own
+   column labels) after a reload. `ns` is 'customers' or 'locations'. */
+/* Client builds save both datasets into one storage namespace, so they set
+   window.__pdMetaDs ('c' or 'l') to say which one is being written. */
+window.pdCaptureMeta = function(ns) {
+  if (window.__pdMetaDs === 'l') return lMeta;
+  if (window.__pdMetaDs === 'c') return cMeta;
+  return ns === 'locations' ? lMeta : cMeta;
+};
+window.pdRestoreMeta = function(saved, ns) {
+  const norm = arr => (arr || []).map(r =>
+    (r && typeof r === 'object' && r.postcode) ? r
+      : { postcode: String(r), name: null, group: null, ref: null, value: null, valueRaw: null });
+  if (ns === 'locations') { lData = norm(lData); lMeta = PDCSV.metaFromRecords(lData, saved); }
+  else                    { cData = norm(cData); cMeta = PDCSV.metaFromRecords(cData, saved); }
+  activeGroups = null;
+  renderGroupFilter();
+};
+
+// ── Group (e.g. account manager) filter ───────────────────────────────────
+function allGroupValues() {
+  return PDCSV.groupsOf([...cData, ...lData]);
+}
+
+function groupFilterLabel() {
+  if (cMeta && cMeta.hasGroup) return cMeta.groupLabel;
+  if (lMeta && lMeta.hasGroup) return lMeta.groupLabel;
+  return 'Group';
+}
+
+/* Show a checkbox per group value, with the record count and total value that
+   each one contributes. Hidden entirely when the CSV has no group column. */
+function renderGroupFilter() {
+  const panel = document.getElementById('groupPanel');
+  const groups = allGroupValues();
+  if (groups.length < 2) { panel.style.display = 'none'; return; }
+
+  const label = groupFilterLabel();
+  document.getElementById('groupPanelLabel').textContent = 'Filter by ' + label;
+  panel.style.display = 'block';
+
+  const all = [...cData, ...lData];
+  const hasValue = (cMeta && cMeta.hasValue) || (lMeta && lMeta.hasValue);
+
+  document.getElementById('groupList').innerHTML = groups.map(g => {
+    const recs = all.filter(r => r.group === g);
+    const on = !activeGroups || activeGroups.has(g);
+    const val = hasValue ? PDCSV.sumValue(recs) : null;
+    return `<label style="display:flex;align-items:center;gap:6px;padding:3px 2px;cursor:pointer">
+      <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleGroup(${JSON.stringify(g).replace(/"/g,'&quot;')}, this.checked)">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g)}</span>
+      <span style="color:var(--muted);font-size:10px">${recs.length}${val ? ' · ' + PDCSV.fmtValue(val) : ''}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleGroup(g, on) {
+  const groups = allGroupValues();
+  if (!activeGroups) activeGroups = new Set(groups);
+  if (on) activeGroups.add(g); else activeGroups.delete(g);
+  if (activeGroups.size === groups.length) activeGroups = null;  // all on = no filter
+  applyGroupFilter();
+}
+
+function setAllGroups(on) {
+  activeGroups = on ? null : new Set();
+  renderGroupFilter();
+  applyGroupFilter();
+}
+
+function applyGroupFilter() {
+  renderGroupFilter();
+  if (Object.keys(geocodeCache).length) rebuild({ fit: false });
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+}
+
+/* Popup heading: the record's name when the CSV supplied one, else the postcode. */
+function titleOf(r) { return esc(r.name || r.postcode); }
+
+/* Popup lines for the CSV's extra columns (value, group, ref). Returns '' when
+   the upload had none, so tools with plain postcode lists look unchanged. */
+function metaLines(r, meta) {
+  const m = meta || cMeta || lMeta;
+  if (!m) return '';
+  let out = '';
+  if (r.value != null) out += `${esc(m.valueLabel)}: <strong>${PDCSV.fmtValue(r.value)}</strong><br>`;
+  if (r.group)         out += `${esc(m.groupLabel)}: <strong>${esc(r.group)}</strong><br>`;
+  if (r.ref)           out += `<span style="font-size:10px;color:#888">${esc(r.ref)}</span><br>`;
+  return out;
 }
 
 // ── Status / progress ─────────────────────────────────────────────────────
@@ -457,36 +565,68 @@ async function runAnalysis() {
   document.getElementById('plotBtn').disabled = true;
   removeAllLayers();
 
-  // Geocode both sets
+  // Geocode both sets. Results are cached so the group filter can rebuild
+  // without hitting the API again.
   const allPC = [...new Set([
-    ...cData.map(r=>r.postcode.replace(/\s+/g,'').toUpperCase()),
-    ...lData.map(r=>r.postcode.replace(/\s+/g,'').toUpperCase())
+    ...cData.map(r=>PDCSV.pcKey(r.postcode)),
+    ...lData.map(r=>PDCSV.pcKey(r.postcode))
   ])];
-  const geo = await bulkGeocode(allPC);
+  const missing = allPC.filter(k => !(k in geocodeCache));
+  if (missing.length) Object.assign(geocodeCache, await bulkGeocode(missing));
+
+  rebuild({ fit: true });
+
+  setStatus(
+    cResult.length + ' customers, ' + lResult.length + ' locations mapped.' +
+    (lResult.length > 0 ? ' Overlap analysis ready.' : ' Add locations for overlap analysis.'),
+    'success'
+  );
+  document.getElementById('plotBtn').disabled = false;
+}
+
+/* True when a record passes the current group (e.g. AM) filter.
+   The filter only applies to a dataset that actually carries the group column —
+   filtering salons by AM must not empty a locations file that has no AM in it.
+   Within a grouped dataset, a row with a blank group is treated as unassigned
+   and hidden while any filter is active. */
+function inGroup(r, meta) {
+  if (!activeGroups) return true;
+  if (!meta || !meta.hasGroup) return true;
+  return !!r.group && activeGroups.has(r.group);
+}
+
+/* Rebuild geocoded results + all derived state from cData/lData, honouring the
+   group filter. Called after analysis and on every filter change. */
+function rebuild(opts) {
+  opts = opts || {};
+  const geoRow = (r, extraRegion) => {
+    const loc = geocodeCache[PDCSV.pcKey(r.postcode)];
+    if (!loc || !loc.valid || loc.lat == null || loc.lng == null) return null;
+    const row = { ...r, lat: loc.lat, lng: loc.lng,
+      district: r.postcode.replace(/\s.*/,''),
+      adminDistrict: loc.district };
+    if (extraRegion) row.region = loc.region;
+    return row;
+  };
 
   cResult = [];
   for (const r of cData) {
-    const key = r.postcode.replace(/\s+/g,'').toUpperCase();
-    const loc = geo[key];
-    if (loc && loc.valid && loc.lat != null && loc.lng != null)
-      cResult.push({ ...r, lat: loc.lat, lng: loc.lng,
-        district: r.postcode.replace(/\s.*/,''),
-        adminDistrict: loc.district, region: loc.region });
+    if (!inGroup(r, cMeta)) continue;
+    const row = geoRow(r, true);
+    if (row) cResult.push(row);
   }
 
   lResult = [];
   for (const r of lData) {
-    const key = r.postcode.replace(/\s+/g,'').toUpperCase();
-    const loc = geo[key];
-    if (loc && loc.valid && loc.lat != null && loc.lng != null)
-      lResult.push({ ...r, lat: loc.lat, lng: loc.lng,
-        district: r.postcode.replace(/\s.*/,''),
-        adminDistrict: loc.district });
+    if (!inGroup(r, lMeta)) continue;
+    const row = geoRow(r, false);
+    if (row) lResult.push(row);
   }
 
-  // Fit bounds
-  const bounds = [...cResult, ...lResult].map(r=>[r.lat,r.lng]);
-  if (bounds.length) map.fitBounds(bounds, {padding:[40,40]});
+  if (opts.fit) {
+    const bounds = [...cResult, ...lResult].map(r=>[r.lat,r.lng]);
+    if (bounds.length) map.fitBounds(bounds, {padding:[40,40]});
+  }
 
   // Overlap calculation — tag each customer with nearest location
   if (lResult.length > 0) {
@@ -505,16 +645,9 @@ async function runAnalysis() {
     calcIndexScores();
   }
 
-  // Build all layers (only show ones that are toggled on)
+  removeAllLayers();
   buildAllLayers();
   updateStats();
-
-  setStatus(
-    cResult.length + ' customers, ' + lResult.length + ' locations mapped.' +
-    (lResult.length > 0 ? ' Overlap analysis ready.' : ' Add locations for overlap analysis.'),
-    'success'
-  );
-  document.getElementById('plotBtn').disabled = false;
 }
 
 // ── Layer building ────────────────────────────────────────────────────────
@@ -540,8 +673,10 @@ function buildLayer(key) {
       L.circleMarker([r.lat+jitter(), r.lng+jitter()], {
         radius: 3, fillColor: 'var(--c-customers)', color: '#2d5be3',
         fillOpacity: 0.6, weight: 0, renderer
-      }).bindPopup(`<strong>${r.postcode}</strong><br>${r.adminDistrict}<br>${r.region}
-        ${r.nearestLocation ? '<br>Nearest: '+r.nearestLocation+' ('+Math.round(r.nearestDist*10)/10+' mi)' : ''}`).addTo(lg);
+      }).bindPopup(`<strong>${titleOf(r)}</strong><br>
+        ${r.name ? esc(r.postcode)+' · ' : ''}${esc(r.adminDistrict)}<br>${esc(r.region)}<br>
+        ${metaLines(r, cMeta)}
+        ${r.nearestLocation ? 'Nearest: '+esc(r.nearestLocation)+' ('+Math.round(r.nearestDist*10)/10+' mi)' : ''}`).addTo(lg);
     }
     layers[key] = lg.addTo(map);
   }
@@ -572,8 +707,9 @@ function buildLayer(key) {
         : null;
       L.marker([r.lat, r.lng], {icon})
         .bindPopup(`
-          <strong>${r.name || r.postcode}</strong><br>
-          ${r.postcode} · ${r.adminDistrict}<br>
+          <strong>${titleOf(r)}</strong><br>
+          ${esc(r.postcode)} · ${esc(r.adminDistrict)}<br>
+          ${metaLines(r, lMeta)}
           <hr style="margin:5px 0;border-color:#eee">
           ${hasIndex ? `
             <span style="color:${pinColour};font-weight:600">${indexLabel(r.indexScore)}</span>
@@ -616,7 +752,8 @@ function buildLayer(key) {
       L.circleMarker([r.lat+jitter(), r.lng+jitter()], {
         radius: 4, fillColor: '#18a058', color: '#18a058',
         fillOpacity: 0.7, weight: 0, renderer
-      }).bindPopup(`<strong>${r.postcode}</strong><br>✓ Within ${radiusMiles}mi of ${r.nearestLocation}`).addTo(lg);
+      }).bindPopup(`<strong>${titleOf(r)}</strong><br>${r.name ? esc(r.postcode)+'<br>' : ''}
+        ${metaLines(r, cMeta)}✓ Within ${radiusMiles}mi of ${esc(r.nearestLocation)}`).addTo(lg);
     }
     layers[key] = lg.addTo(map);
   }
@@ -629,7 +766,8 @@ function buildLayer(key) {
       L.circleMarker([r.lat+jitter(), r.lng+jitter()], {
         radius: 4, fillColor: '#e24b4a', color: '#e24b4a',
         fillOpacity: 0.7, weight: 0, renderer
-      }).bindPopup(`<strong>${r.postcode}</strong><br>✗ ${Math.round(r.nearestDist*10)/10}mi from nearest location`).addTo(lg);
+      }).bindPopup(`<strong>${titleOf(r)}</strong><br>${r.name ? esc(r.postcode)+'<br>' : ''}
+        ${metaLines(r, cMeta)}✗ ${Math.round(r.nearestDist*10)/10}mi from nearest location`).addTo(lg);
     }
     layers[key] = lg.addTo(map);
   }
@@ -786,6 +924,14 @@ function updateStats() {
     <div class="stat gap" style="cursor:pointer" onclick="toggleOverlap('gap')" title="Click to isolate on map">
       <div class="num">${gaps.toLocaleString()}</div><div class="lbl">✗ Outside radius</div></div>`;
 
+    if (cMeta && cMeta.hasValue) {
+      const gapVal = PDCSV.sumValue(cResult.filter(c=>!c.withinRadius));
+      statsHTML += `
+      <div class="stat gap" style="grid-column:1/-1">
+        <div class="num">${PDCSV.fmtValue(gapVal)}</div>
+        <div class="lbl">${esc(cMeta.valueLabel)} outside radius</div></div>`;
+    }
+
     // Show export buttons
     document.getElementById('exp-served').style.display = 'block';
     document.getElementById('exp-gaps').style.display = 'block';
@@ -821,46 +967,86 @@ function updateStats() {
 // ── Export ────────────────────────────────────────────────────────────────
 function downloadCSV(rows, filename) {
   const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(PDCSV.toCSV(rows));
   a.download = filename; a.click();
 }
 
-function exportServed() {
+/* Header names for the CSV's extra columns, using the client's own header text
+   so an export reads in their language ("Eleven Retail Net Sales", "AM"). */
+function metaHeaders(meta) {
+  const m = meta || cMeta || lMeta;
+  const out = [];
+  if (m && m.hasName)  out.push(m.nameLabel);
+  if (m && m.hasValue) out.push(m.valueLabel);
+  if (m && m.hasGroup) out.push(m.groupLabel);
+  if (m && m.columns && m.columns.ref >= 0) out.push(m.headers[m.columns.ref] || 'ref');
+  return out;
+}
+function metaCells(r, meta) {
+  const m = meta || cMeta || lMeta;
+  const out = [];
+  if (m && m.hasName)  out.push(r.name || '');
+  if (m && m.hasValue) out.push(r.value != null ? r.value : '');
+  if (m && m.hasGroup) out.push(r.group || '');
+  if (m && m.columns && m.columns.ref >= 0) out.push(r.ref || '');
+  return out;
+}
+
+function exportCustomerSubset(recs, filename, emptyMsg) {
   if (!cResult.length) { alert('Run analysis first.'); return; }
-  const served = cResult.filter(c => c.withinRadius);
-  if (!served.length) { alert('No served customers at current radius.'); return; }
-  const rows = [['postcode','district','admin_district','region','nearest_location','distance_miles','location_index','lat','lng']];
-  for (const r of served.sort((a,b) => a.nearestDist - b.nearestDist)) {
+  if (!recs.length) { alert(emptyMsg); return; }
+  const rows = [['postcode', ...metaHeaders(cMeta), 'district','admin_district','region',
+                 'nearest_location','distance_miles','location_index','lat','lng']];
+  for (const r of recs) {
     const loc = lResult.find(l=>(l.name||l.postcode)===r.nearestLocation);
-    rows.push([r.postcode, r.district, r.adminDistrict, r.region,
+    rows.push([r.postcode, ...metaCells(r, cMeta), r.district, r.adminDistrict, r.region,
       r.nearestLocation||'', Math.round(r.nearestDist*10)/10,
       loc ? loc.indexScore : '', r.lat, r.lng]);
   }
-  downloadCSV(rows, `served_customers_${radiusMiles}mi.csv`);
+  downloadCSV(rows, filename);
+}
+
+function exportServed() {
+  exportCustomerSubset(
+    cResult.filter(c => c.withinRadius).sort((a,b) => a.nearestDist - b.nearestDist),
+    `served_customers_${radiusMiles}mi.csv`, 'No served customers at current radius.');
 }
 
 function exportGaps() {
-  if (!cResult.length) { alert('Run analysis first.'); return; }
-  const gaps = cResult.filter(c => !c.withinRadius);
-  if (!gaps.length) { alert('No gap customers at current radius.'); return; }
-  const rows = [['postcode','district','admin_district','region','nearest_location','distance_miles','location_index','lat','lng']];
-  for (const r of gaps.sort((a,b) => b.nearestDist - a.nearestDist)) {
-    const loc = lResult.find(l=>(l.name||l.postcode)===r.nearestLocation);
-    rows.push([r.postcode, r.district, r.adminDistrict, r.region,
-      r.nearestLocation||'', Math.round(r.nearestDist*10)/10,
-      loc ? loc.indexScore : '', r.lat, r.lng]);
-  }
-  downloadCSV(rows, `gap_customers_${radiusMiles}mi.csv`);
+  exportCustomerSubset(
+    cResult.filter(c => !c.withinRadius).sort((a,b) => b.nearestDist - a.nearestDist),
+    `gap_customers_${radiusMiles}mi.csv`, 'No gap customers at current radius.');
 }
 
 function exportAll() {
   if (!cResult.length && !lResult.length) { alert('Run analysis first.'); return; }
-  const rows = [['type','postcode','name','district','admin_district','region','lat','lng','nearest_location','dist_miles','within_radius']];
+  // Customers and locations can carry different columns, so the combined export
+  // uses one generic set of headers covering both.
+  const anyValue = (cMeta && cMeta.hasValue) || (lMeta && lMeta.hasValue);
+  const anyGroup = (cMeta && cMeta.hasGroup) || (lMeta && lMeta.hasGroup);
+  const anyRef   = (cMeta && cMeta.columns.ref >= 0) || (lMeta && lMeta.columns.ref >= 0);
+  const valueLbl = (cMeta && cMeta.hasValue ? cMeta.valueLabel : null) || (lMeta && lMeta.valueLabel) || 'value';
+  const groupLbl = (cMeta && cMeta.hasGroup ? cMeta.groupLabel : null) || (lMeta && lMeta.groupLabel) || 'group';
+
+  const head = ['type','postcode','name'];
+  if (anyValue) head.push(valueLbl);
+  if (anyGroup) head.push(groupLbl);
+  if (anyRef)   head.push('ref');
+  head.push('district','admin_district','region','lat','lng','nearest_location','dist_miles','within_radius');
+
+  const rows = [head];
+  const extra = r => {
+    const o = [];
+    if (anyValue) o.push(r.value != null ? r.value : '');
+    if (anyGroup) o.push(r.group || '');
+    if (anyRef)   o.push(r.ref || '');
+    return o;
+  };
   for (const r of cResult)
-    rows.push(['customer', r.postcode, r.name||'', r.district, r.adminDistrict, r.region, r.lat, r.lng,
+    rows.push(['customer', r.postcode, r.name||'', ...extra(r), r.district, r.adminDistrict, r.region, r.lat, r.lng,
       r.nearestLocation||'', r.nearestDist!=null ? Math.round(r.nearestDist*10)/10 : '', r.withinRadius!=null ? r.withinRadius : '']);
   for (const r of lResult)
-    rows.push(['location', r.postcode, r.name||'', r.district, r.adminDistrict, '', r.lat, r.lng, '', '', '']);
+    rows.push(['location', r.postcode, r.name||'', ...extra(r), r.district, r.adminDistrict, '', r.lat, r.lng, '', '', '']);
   downloadCSV(rows, 'overlap_analysis_full.csv');
 }
 
@@ -921,8 +1107,49 @@ function generateOverlapBrief() {
   // Furthest gap customers — biggest expansion opportunities
   const furthestGaps = [...gaps].sort((a,b)=>b.nearestDist-a.nearestDist).slice(0,8);
 
+  // Value + group (e.g. AM) analysis — only when the upload carried those columns
+  const briefHasValue = !!(cMeta && cMeta.hasValue);
+  const briefHasGroup = !!(cMeta && cMeta.hasGroup);
+  const valueLabel = cMeta ? cMeta.valueLabel : 'Value';
+  const groupLabel = cMeta ? cMeta.groupLabel : 'Group';
+  const totalValue  = briefHasValue ? PDCSV.sumValue(cResult) : 0;
+  const servedValue = briefHasValue ? PDCSV.sumValue(served)  : 0;
+  const gapValue    = briefHasValue ? PDCSV.sumValue(gaps)    : 0;
+  const servedValuePct = totalValue > 0 ? Math.round(servedValue/totalValue*100) : 0;
+
+  // Per-group rows: coverage and value at risk for each account manager
+  let groupRows = [];
+  if (briefHasGroup) {
+    const byGroup = {};
+    cResult.forEach(c => {
+      const g = c.group || '—';
+      byGroup[g] = byGroup[g] || { total: 0, served: 0, value: 0, gapValue: 0 };
+      byGroup[g].total++;
+      if (c.withinRadius) byGroup[g].served++;
+      if (c.value != null) {
+        byGroup[g].value += c.value;
+        if (!c.withinRadius) byGroup[g].gapValue += c.value;
+      }
+    });
+    groupRows = Object.entries(byGroup)
+      .map(([g, s]) => ({ group: g, ...s, pct: s.total ? Math.round(s.served/s.total*100) : 0 }))
+      .sort((a,b) => briefHasValue ? b.value - a.value : b.total - a.total);
+  }
+
+  const filterNote = activeGroups
+    ? ` · Filtered to ${groupLabel}: ${[...activeGroups].join(', ')}`
+    : '';
+
   // Insight callouts
   const insights = [];
+  if (briefHasValue && gapValue > 0) {
+    insights.push(`<strong>${PDCSV.fmtValue(gapValue)}</strong> of ${esc(valueLabel)} sits outside all catchments (${100-servedValuePct}% of ${PDCSV.fmtValue(totalValue)} total) — the commercial size of the coverage gap.`);
+  }
+  if (briefHasGroup && groupRows.length > 1) {
+    const worst = [...groupRows].sort((a,b) => a.pct - b.pct)[0];
+    const best  = [...groupRows].sort((a,b) => b.pct - a.pct)[0];
+    insights.push(`Coverage varies by ${groupLabel}: <strong>${esc(best.group)}</strong> at ${best.pct}% served vs <strong>${esc(worst.group)}</strong> at ${worst.pct}% — the lowest-covered territory is the clearest place to focus.`);
+  }
   if (gapPct > 50) insights.push(`<strong>${gapPct}%</strong> of customers fall outside all location catchments — significant untapped demand exists in the current network.`);
   if (gapPct < 20) insights.push(`<strong>${servedPct}%</strong> of customers are within catchment — strong location coverage. Focus on conversion and retention within served areas.`);
   const underLocs = indexedLocs.filter(l=>l.indexScore<80);
@@ -995,7 +1222,7 @@ function generateOverlapBrief() {
     ${logoSrc?`<img class="header-logo" src="${logoSrc}" alt="${agencyName}">`:`<div class="header-logo placeholder">${agencyName}</div>`}
     <div class="header-right">
       <div class="brief-title">Customer Coverage Analysis</div>
-      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite · Radius: ${radiusMiles} miles</div>
+      <div class="brief-meta">Generated ${today} · ${agencyName} · Geo Intelligence Suite · Radius: ${radiusMiles} miles${esc(filterNote)}</div>
     </div>
   </div>
 
@@ -1022,6 +1249,12 @@ function generateOverlapBrief() {
       <div class="val" style="color:var(--red)">${gaps.length.toLocaleString()}</div>
       <div class="sub">${gapPct}% of customer base</div>
     </div>
+    ${briefHasValue?`
+    <div class="stat-card">
+      <h4>${esc(valueLabel)} in catchment</h4>
+      <div class="val">${PDCSV.fmtValue(servedValue)}</div>
+      <div class="sub">${servedValuePct}% of ${PDCSV.fmtValue(totalValue)} · ${PDCSV.fmtValue(gapValue)} outside</div>
+    </div>`:''}
   </div>
 
   <!-- Key insights -->
@@ -1030,6 +1263,29 @@ function generateOverlapBrief() {
   <div class="insight-box">
     ${insights.map(i=>`<div class="insight-item">${i}</div>`).join('')}
   </div>`:''}
+
+  <!-- Breakdown by group (e.g. account manager) -->
+  ${groupRows.length?`
+  <div class="section-title">Coverage by ${esc(groupLabel)}</div>
+  <table class="loc-table">
+    <thead><tr>
+      <th>${esc(groupLabel)}</th><th>Customers</th><th>Served</th><th>Coverage</th>
+      ${briefHasValue?`<th>${esc(valueLabel)}</th><th>Outside catchment</th>`:''}
+    </tr></thead>
+    <tbody>
+    ${groupRows.map(g=>{
+      const cls = g.pct>=80?'idx-high':g.pct>=50?'idx-mid':'idx-low';
+      return `<tr>
+        <td style="font-weight:500">${esc(g.group)}</td>
+        <td>${g.total.toLocaleString()}</td>
+        <td>${g.served.toLocaleString()}</td>
+        <td><span class="idx-badge ${cls}">${g.pct}%</span></td>
+        ${briefHasValue?`<td>${PDCSV.fmtValue(g.value)}</td>
+        <td style="color:${g.gapValue>0?'var(--red)':'var(--muted)'}">${PDCSV.fmtValue(g.gapValue)}</td>`:''}
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table>`:''}
 
   <!-- Location index table -->
   ${indexedLocs.length?`
@@ -1096,8 +1352,11 @@ function generateOverlapBrief() {
   <div class="gap-grid">
     ${furthestGaps.map(c=>`
       <div class="gap-item">
-        <div class="dist">${c.postcode}</div>
-        <div class="detail">${c.district} · ${c.region}<br>Nearest: ${c.nearestLocation||'—'}<br>${Math.round(c.nearestDist*10)/10} miles away</div>
+        <div class="dist">${esc(c.name || c.postcode)}</div>
+        <div class="detail">${c.name ? esc(c.postcode)+' · ' : ''}${esc(c.district)} · ${esc(c.region)}<br>
+        ${c.value != null ? esc(valueLabel)+': <strong>'+PDCSV.fmtValue(c.value)+'</strong><br>' : ''}
+        ${c.group ? esc(groupLabel)+': '+esc(c.group)+'<br>' : ''}
+        Nearest: ${esc(c.nearestLocation||'—')}<br>${Math.round(c.nearestDist*10)/10} miles away</div>
       </div>`).join('')}
   </div>`:''}
 
@@ -1123,6 +1382,8 @@ function generateOverlapBrief() {
 function clearAll() {
   removeAllLayers();
   cData=[]; lData=[]; cResult=[]; lResult=[];
+  cMeta=null; lMeta=null; activeGroups=null; geocodeCache={};
+  document.getElementById('groupPanel').style.display='none';
   ['fi-c','fi-l'].forEach(id=>document.getElementById(id).value='');
   ['pa-c','pa-l'].forEach(id=>document.getElementById(id).value='');
   ['fn-c','fn-l'].forEach(id=>document.getElementById(id).textContent='');
@@ -1233,7 +1494,7 @@ function loadSample(ds) {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof cData !== 'undefined') cData = data;
-    if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
+    if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof pdRestoreMeta==="function"){try{  pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -1279,7 +1540,7 @@ function loadSample(ds) {
       if (active && active.data && active.data.length) {
         if (typeof cData !== 'undefined') cData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof checkReady==="function") checkReady();
+        if(all&&all[name]&&all[name].data&&all[name].data.length){  cData=all[name].data.map(function(c){    return(c&&typeof c==="object"&&c.postcode)?c:{postcode:String(c),name:null};  });}if(typeof pdRestoreMeta==="function"){try{  pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
       }
     }
   });
@@ -1376,6 +1637,9 @@ function loadSample(ds) {
     localStorage.setItem(LOC_ACT_KEY, name);
     var data = all[name].data;
     if (typeof lData !== 'undefined') lData = norm(data);
+    if (typeof pdRestoreMeta === 'function') {
+      try { pdRestoreMeta(all[name].meta, 'locations'); } catch(e) {}
+    }
     if (typeof checkReady === 'function') checkReady();
     renderPicker(name);
   };
@@ -1386,7 +1650,9 @@ function loadSample(ds) {
       setTimeout(function() {
         try {
           if (typeof lData !== 'undefined' && lData.length) {
+            window.__pdMetaDs = 'l';
             pdSave_customers(lData, name);
+            window.__pdMetaDs = null;
             localStorage.setItem(LOC_ACT_KEY, name);
             renderPicker(name);
             // Also refresh Dataset 1 picker so it shows the new dataset too
@@ -1408,6 +1674,9 @@ function loadSample(ds) {
       renderPicker(active);
       if (active && all[active] && all[active].data && all[active].data.length) {
         if (typeof lData !== 'undefined') lData = norm(all[active].data);
+        if (typeof pdRestoreMeta === 'function') {
+          try { pdRestoreMeta(all[active].meta, 'locations'); } catch(e) {}
+        }
         if (typeof checkReady === 'function') checkReady();
       }
     }
@@ -1426,7 +1695,9 @@ document.addEventListener('DOMContentLoaded', function() {
           var fi = document.getElementById('fi-c');
           var name = (fi && fi.files && fi.files[0])
             ? fi.files[0].name.replace(/[.][^.]+$/, '') : 'Customers';
+          window.__pdMetaDs = 'c';
           pdSave_customers(cData, name);
+          window.__pdMetaDs = null;
           if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(name);
           if (typeof pdRenderPicker_locations === 'function') pdRenderPicker_locations(
             localStorage.getItem('geo_pd_pd_locations_active') || name
@@ -1437,7 +1708,9 @@ document.addEventListener('DOMContentLoaded', function() {
           var fi2 = document.getElementById('fi-l');
           var name2 = (fi2 && fi2.files && fi2.files[0])
             ? fi2.files[0].name.replace(/[.][^.]+$/, '') : 'Locations';
+          window.__pdMetaDs = 'l';
           pdSave_customers(lData, name2);
+          window.__pdMetaDs = null;
           localStorage.setItem('geo_pd_pd_locations_active', name2);
           if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(
             pdLoad_customers() ? pdLoad_customers().name : name2

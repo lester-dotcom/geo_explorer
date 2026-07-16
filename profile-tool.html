@@ -165,7 +165,13 @@ textarea:focus{border-color:var(--pd-green);}
   window.pdSave_customers = function(data, name) {
     var all = _all();
     name = name || 'Dataset ' + (Object.keys(all).length + 1);
-    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString() };
+    // Persist the CSV column metadata alongside the rows, so a restored dataset
+    // keeps the client's own column labels (e.g. "Eleven Retail Net Sales").
+    var meta = null;
+    try {
+      if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+    } catch(e) {}
+    all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
     localStorage.setItem(ACT_KEY, name);
   };
@@ -1727,7 +1733,7 @@ renderUnderindex = function(r) {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof rawData !== 'undefined') rawData = data;
-    if(typeof checkReady==="function") checkReady();
+    if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -1773,7 +1779,7 @@ renderUnderindex = function(r) {
       if (active && active.data && active.data.length) {
         if (typeof rawData !== 'undefined') rawData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        if(typeof checkReady==="function") checkReady();
+        if(typeof pdRestoreMeta==="function"){try{pdRestoreMeta(all&&all[name]?all[name].meta:null,"customers");}catch(e){}}if(typeof checkReady==="function") checkReady();
       }
     }
   });
