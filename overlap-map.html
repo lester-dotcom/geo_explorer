@@ -402,6 +402,7 @@ function parseCSV(text, ds) {
     setStatus(`${rows.length} location rows loaded.${describeCols(parsed)}`);
   }
   activeGroups = null;   // a new upload resets any territory filter
+  _pcNameCache = null;   // postcode→name map must be rebuilt from the new data
   PDCSV.showStaleNotice(false, 'statusMsg');   // fresh upload clears the notice
   renderGroupFilter();
   checkReady();
@@ -510,6 +511,26 @@ function esc(s) {
 
 /* Popup heading: the record's name when the CSV supplied one, else the postcode. */
 function titleOf(r) { return esc(r.name || r.postcode); }
+
+/* Display label for a location. Locations are often uploaded as bare postcodes
+   while the customer sheet carries the salon names, so fall back to matching on
+   postcode before giving up and showing the postcode itself. */
+let _pcNameCache = null;
+function nameByPostcode(pc) {
+  if (!_pcNameCache) {
+    _pcNameCache = {};
+    // Customers first, then locations, so a named location still wins for itself.
+    for (const r of [...cData, ...lData]) {
+      if (!r || !r.name) continue;
+      const k = PDCSV.pcKey(r.postcode);
+      if (!(k in _pcNameCache)) _pcNameCache[k] = r.name;
+    }
+  }
+  return _pcNameCache[PDCSV.pcKey(pc)] || null;
+}
+function locLabel(l) {
+  return l.name || nameByPostcode(l.postcode) || l.postcode;
+}
 
 /* Popup lines for the CSV's extra columns (value, group, ref). Returns '' when
    the upload had none, so tools with plain postcode lists look unchanged. */
@@ -645,7 +666,7 @@ function rebuild(opts) {
         const d = haversine(c.lat,c.lng,l.lat,l.lng);
         if (d < minDist) { minDist = d; nearest = l; }
       }
-      c.nearestLocation = nearest ? (nearest.name || nearest.postcode) : null;
+      c.nearestLocation = nearest ? locLabel(nearest) : null;
       c.nearestDist = minDist;
       c.withinRadius = minDist <= radiusMiles;
     }
@@ -716,7 +737,7 @@ function buildLayer(key) {
         : null;
       L.marker([r.lat, r.lng], {icon})
         .bindPopup(`
-          <strong>${titleOf(r)}</strong><br>
+          <strong>${esc(locLabel(r))}</strong><br>
           ${esc(r.postcode)} · ${esc(r.adminDistrict)}<br>
           ${metaLines(r, lMeta)}
           <hr style="margin:5px 0;border-color:#eee">
@@ -748,7 +769,7 @@ function buildLayer(key) {
       L.circle([r.lat,r.lng], {
         radius: radiusMetres, color: 'var(--c-locations)',
         fillColor: 'var(--c-locations)', fillOpacity: 0.06, weight: 1.5
-      }).bindPopup(`${r.name||r.postcode} — ${radiusMiles}mi radius`).addTo(lg);
+      }).bindPopup(`${esc(locLabel(r))} — ${radiusMiles}mi radius`).addTo(lg);
     }
     layers[key] = lg.addTo(map);
   }
@@ -966,7 +987,7 @@ function updateStats() {
     document.getElementById('indexPanel').style.display = 'block';
     document.getElementById('indexList').innerHTML = sorted.map(l => `
       <div class="top-item" style="margin-bottom:6px">
-        <span class="district" style="min-width:80px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${l.name||l.postcode}">${l.name||l.postcode}</span>
+        <span class="district" style="min-width:80px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(locLabel(l))}">${esc(locLabel(l))}</span>
         <div class="bar-wrap"><div class="bar-inner" style="width:${Math.round(l.indexScore/maxIdx*100)}%;background:${indexColour(l.indexScore)}"></div></div>
         <span class="cnt" style="min-width:32px;font-weight:600;color:${indexColour(l.indexScore)}">${l.indexScore}</span>
       </div>`).join('');
@@ -1007,7 +1028,7 @@ function exportCustomerSubset(recs, filename, emptyMsg) {
   const rows = [['postcode', ...metaHeaders(cMeta), 'district','admin_district','region',
                  'nearest_location','distance_miles','location_index','lat','lng']];
   for (const r of recs) {
-    const loc = lResult.find(l=>(l.name||l.postcode)===r.nearestLocation);
+    const loc = lResult.find(l=>locLabel(l)===r.nearestLocation);
     rows.push([r.postcode, ...metaCells(r, cMeta), r.district, r.adminDistrict, r.region,
       r.nearestLocation||'', Math.round(r.nearestDist*10)/10,
       loc ? loc.indexScore : '', r.lat, r.lng]);
@@ -1149,9 +1170,23 @@ function generateOverlapBrief() {
     ? ` · Filtered to ${groupLabel}: ${[...activeGroups].join(', ')}`
     : '';
 
+  /* Long tables make the brief unusable, so show the best and worst N and
+     collapse the middle. A null entry marks where the separator row goes.
+     Under 2N rows there is nothing to collapse, so show everything. */
+  const TOPN = 10;
+  const topAndBottom = (arr, n = TOPN) =>
+    arr.length <= n * 2
+      ? { rows: arr, hidden: 0 }
+      : { rows: [...arr.slice(0, n), null, ...arr.slice(-n)], hidden: arr.length - n * 2 };
+
+  // AM table ranks on coverage — that is what the reader is comparing.
+  const coverageRows = topAndBottom([...groupRows].sort((a, b) => b.pct - a.pct));
+  const indexRows    = topAndBottom(indexedLocs);   // already sorted best → worst
+
   // Insight callouts
   const insights = [];
-  if (briefHasValue && gapValue > 0) {
+  // Only worth saying when the gap is material — at 0% it reads as noise.
+  if (briefHasValue && gapValue > 0 && (100 - servedValuePct) >= 1) {
     insights.push(`<strong>${PDCSV.fmtValue(gapValue)}</strong> of ${esc(valueLabel)} sits outside all catchments (${100-servedValuePct}% of ${PDCSV.fmtValue(totalValue)} total) — the commercial size of the coverage gap.`);
   }
   if (briefHasGroup && groupRows.length > 1) {
@@ -1161,10 +1196,18 @@ function generateOverlapBrief() {
   }
   if (gapPct > 50) insights.push(`<strong>${gapPct}%</strong> of customers fall outside all location catchments — significant untapped demand exists in the current network.`);
   if (gapPct < 20) insights.push(`<strong>${servedPct}%</strong> of customers are within catchment — strong location coverage. Focus on conversion and retention within served areas.`);
-  const underLocs = indexedLocs.filter(l=>l.indexScore<80);
-  if (underLocs.length) insights.push(`<strong>${underLocs.length} location${underLocs.length>1?'s':''}</strong> (${underLocs.map(l=>l.name||l.postcode).join(', ')}) are underindexing relative to network average — targeted local campaigns recommended.`);
-  const overLocs = indexedLocs.filter(l=>l.indexScore>=120);
-  if (overLocs.length) insights.push(`<strong>${overLocs.length} location${overLocs.length>1?'s':''}</strong> (${overLocs.map(l=>l.name||l.postcode).join(', ')}) are over-indexing — consider expanding capacity or increasing radius targeting here.`);
+  /* Name a handful of examples rather than every location — listing hundreds
+     of postcodes made the brief unreadable. Worst/best first, since those are
+     the ones worth naming. */
+  const nameSome = (list, n = 5) => {
+    const shown = list.slice(0, n).map(l => esc(locLabel(l))).join(', ');
+    return list.length > n ? `${shown} and ${list.length - n} more` : shown;
+  };
+
+  const underLocs = indexedLocs.filter(l=>l.indexScore<80).sort((a,b)=>a.indexScore-b.indexScore);
+  if (underLocs.length) insights.push(`<strong>${underLocs.length} location${underLocs.length>1?'s':''}</strong> are underindexing relative to network average (lowest: ${nameSome(underLocs)}) — targeted local campaigns recommended.`);
+  const overLocs = indexedLocs.filter(l=>l.indexScore>=120).sort((a,b)=>b.indexScore-a.indexScore);
+  if (overLocs.length) insights.push(`<strong>${overLocs.length} location${overLocs.length>1?'s':''}</strong> are over-indexing (highest: ${nameSome(overLocs)}) — consider expanding capacity or increasing radius targeting here.`);
   if (topGapRegions.length) insights.push(`Gap customers are most concentrated in <strong>${topGapRegions[0][0]}</strong> (${topGapRegions[0][1]} customers) — priority region for network expansion or targeted digital campaigns.`);
 
   const briefHTML = `<!DOCTYPE html>
@@ -1275,14 +1318,17 @@ function generateOverlapBrief() {
 
   <!-- Breakdown by group (e.g. account manager) -->
   ${groupRows.length?`
-  <div class="section-title">Coverage by ${esc(groupLabel)}</div>
+  <div class="section-title">Coverage by ${esc(groupLabel)}
+    ${coverageRows.hidden?`<span style="font-weight:400;font-size:10px;color:var(--muted)">(best and worst ${TOPN})</span>`:''}
+  </div>
   <table class="loc-table">
     <thead><tr>
       <th>${esc(groupLabel)}</th><th>Customers</th><th>Served</th><th>Coverage</th>
       ${briefHasValue?`<th>${esc(valueLabel)}</th><th>Outside catchment</th>`:''}
     </tr></thead>
     <tbody>
-    ${groupRows.map(g=>{
+    ${coverageRows.rows.map(g=>{
+      if (g === null) return `<tr><td colspan="${briefHasValue?6:4}" style="text-align:center;color:var(--muted);font-size:10px;padding:6px">⋯ ${coverageRows.hidden} more ${esc(groupLabel)} omitted ⋯</td></tr>`;
       const cls = g.pct>=80?'idx-high':g.pct>=50?'idx-mid':'idx-low';
       return `<tr>
         <td style="font-weight:500">${esc(g.group)}</td>
@@ -1298,25 +1344,30 @@ function generateOverlapBrief() {
 
   <!-- Location index table -->
   ${indexedLocs.length?`
-  <div class="section-title">Location performance index <span style="font-weight:400;font-size:10px;color:var(--muted)">(100 = network average)</span></div>
+  <div class="section-title">Location performance index
+    <span style="font-weight:400;font-size:10px;color:var(--muted)">(100 = network average${indexRows.hidden?` · top and bottom ${TOPN}`:''})</span>
+  </div>
   <table class="loc-table">
     <thead><tr>
       <th>Location</th><th>Postcode</th><th>Customers in catchment</th><th>Network avg</th><th>Index</th><th>Status</th>
     </tr></thead>
     <tbody>
-    ${indexedLocs.map(l=>{
+    ${(() => {
       const avg = Math.round(lResult.reduce((s,x)=>s+(x.catchmentCount||0),0)/lResult.length);
-      const cls = l.indexScore>=120?'idx-high':l.indexScore>=80?'idx-mid':'idx-low';
-      const label = l.indexScore>=120?'Over-indexing':l.indexScore>=80?'Average':'Under-indexing';
-      return `<tr>
-        <td style="font-weight:500">${l.name||l.postcode}</td>
-        <td style="font-family:monospace;font-size:11px">${l.postcode}</td>
-        <td>${(l.catchmentCount||0).toLocaleString()}</td>
-        <td>${avg.toLocaleString()}</td>
-        <td><span class="idx-badge ${cls}">${l.indexScore}</span></td>
-        <td style="font-size:10px;color:var(--muted)">${label}</td>
-      </tr>`;
-    }).join('')}
+      return indexRows.rows.map(l=>{
+        if (l === null) return `<tr><td colspan="6" style="text-align:center;color:var(--muted);font-size:10px;padding:6px">⋯ ${indexRows.hidden} more locations omitted ⋯</td></tr>`;
+        const cls = l.indexScore>=120?'idx-high':l.indexScore>=80?'idx-mid':'idx-low';
+        const label = l.indexScore>=120?'Over-indexing':l.indexScore>=80?'Average':'Under-indexing';
+        return `<tr>
+          <td style="font-weight:500">${esc(locLabel(l))}</td>
+          <td style="font-family:monospace;font-size:11px">${esc(l.postcode)}</td>
+          <td>${(l.catchmentCount||0).toLocaleString()}</td>
+          <td>${avg.toLocaleString()}</td>
+          <td><span class="idx-badge ${cls}">${l.indexScore}</span></td>
+          <td style="font-size:10px;color:var(--muted)">${label}</td>
+        </tr>`;
+      }).join('');
+    })()}
     </tbody>
   </table>`:''}
 
@@ -1391,7 +1442,7 @@ function generateOverlapBrief() {
 function clearAll() {
   removeAllLayers();
   cData=[]; lData=[]; cResult=[]; lResult=[];
-  cMeta=null; lMeta=null; activeGroups=null; geocodeCache={};
+  cMeta=null; lMeta=null; activeGroups=null; geocodeCache={}; _pcNameCache=null;
   document.getElementById('groupPanel').style.display='none';
   ['fi-c','fi-l'].forEach(id=>document.getElementById(id).value='');
   ['pa-c','pa-l'].forEach(id=>document.getElementById(id).value='');
