@@ -451,7 +451,13 @@ async function exportMapPDF() {
   setStatus('Preparing map for print…');
   document.body.classList.add('pd-map-only');
   map.invalidateSize({ animate: false });
+  // zoomSnap 0 lets fitBounds land on a fractional zoom. At the default of 1 it
+  // rounds down to a whole level, which can zoom out by up to 2x and leaves the
+  // printed map noticeably wider than what is on screen.
+  const prevSnap = map.options.zoomSnap;
+  map.options.zoomSnap = 0;
   map.fitBounds(bounds, { animate: false });
+  map.options.zoomSnap = prevSnap;
 
   // Wait for tiles to finish loading at the new size, or give up after 6s —
   // printing early is what produced half-blank maps.
@@ -781,9 +787,19 @@ function rebuild(opts) {
   }
 
   if (opts.fit) {
-    // With a group filter on, frame that territory's customers only — locations
-    // are not group-filtered, so including them would zoom back out nationally.
-    const src = (activeGroups && cResult.length) ? cResult : [...cResult, ...lResult];
+    // Frame whichever dataset the filter actually applies to. The group column
+    // may sit on either upload — e.g. AM on the salon/locations sheet while the
+    // customers are a separate national list — and fitting to an unfiltered
+    // dataset would just zoom back out to the whole country.
+    let src;
+    if (activeGroups) {
+      src = [];
+      if (cMeta && cMeta.hasGroup) src.push(...cResult);
+      if (lMeta && lMeta.hasGroup) src.push(...lResult);
+      if (!src.length) src = [...cResult, ...lResult];
+    } else {
+      src = [...cResult, ...lResult];
+    }
     const bounds = src.map(r=>[r.lat,r.lng]);
     // animate:false — toggling a filter fires two fits in quick succession and
     // an in-flight animation swallows the second one, leaving the old view.
