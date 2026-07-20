@@ -133,6 +133,8 @@ textarea:focus{border-color:var(--primary);}
     var meta = null;
     try {
       if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+      // Tools without a capture hook (e.g. HNW) set this directly instead.
+      if (!meta && window.__pdHnwMeta) meta = window.__pdHnwMeta;
     } catch(e) {}
     all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);

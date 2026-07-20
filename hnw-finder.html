@@ -88,6 +88,7 @@
 
     .overlay-badge { position: absolute; bottom: 10px; left: 10px; z-index: 1000; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 11px; color: var(--muted); box-shadow: 0 2px 6px rgba(0,0,0,.08); pointer-events: none; display: none; }
   </style>
+<script src="pd_csv.js"></script>
 
 <script>
 /* ── Pratt Digital multi-dataset storage: customers ── */
@@ -106,6 +107,8 @@
     var meta = null;
     try {
       if (typeof window.pdCaptureMeta === 'function') meta = window.pdCaptureMeta('customers');
+      // Tools without a capture hook (e.g. HNW) set this directly instead.
+      if (!meta && window.__pdHnwMeta) meta = window.__pdHnwMeta;
     } catch(e) {}
     all[name] = { data: data, count: data.length, savedAt: new Date().toISOString(), meta: meta };
     _save(all);
@@ -868,7 +871,7 @@ if (typeof HNW_DATA === 'undefined') {
     pdSetActive_customers(name);
     var data = all[name].data;
     if (typeof customerData !== 'undefined') customerData = data;
-    var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _raw=_entry.rawText||(_entry.data&&_entry.data.length?_entry.data.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
+    var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _rows=(_entry.data||[]).map(function(r){    return (r&&typeof r==="object")?(r.postcode||""):String(r);  }).filter(Boolean);  var _raw=_entry.rawText||(_rows.length?_rows.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
     updateActiveBadge_customers(name, all[name]);
   };
 
@@ -914,7 +917,7 @@ if (typeof HNW_DATA === 'undefined') {
       if (active && active.data && active.data.length) {
         if (typeof customerData !== 'undefined') customerData = active.data;
         var name = active.name; // make `name` available to on_load_extra (same scope as pdUseSelected)
-        var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _raw=_entry.rawText||(_entry.data&&_entry.data.length?_entry.data.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
+        var _pa=document.getElementById("pasteArea");var _entry=all[name];if(_pa&&_entry){  var _rows=(_entry.data||[]).map(function(r){    return (r&&typeof r==="object")?(r.postcode||""):String(r);  }).filter(Boolean);  var _raw=_entry.rawText||(_rows.length?_rows.join("\n"):"");  if(_raw){_pa.value=_raw;_pa.dispatchEvent(new Event("input"));}}if(typeof checkReady==="function") checkReady();
       }
     }
   });
@@ -924,9 +927,14 @@ if (typeof HNW_DATA === 'undefined') {
 
 // HNW uses textarea — override pdTriggerParse_customers for text passthrough
 window.pdTriggerParse_customers = function(text, name) {
-  // Count lines as proxy for record count
-  var lines = text.trim().split('\n').filter(function(l){return l.trim();});
-  pdSave_customers(lines, name);
+  // Store full records + column metadata (not bare lines), so a dataset saved
+  // from this tool still carries name / revenue / owner columns elsewhere.
+  var parsed = (typeof PDCSV !== 'undefined')
+    ? PDCSV.records(text)
+    : { records: text.trim().split('\n').filter(function(l){return l.trim();}) };
+  window.__pdHnwMeta = parsed.columns ? parsed : null;
+  pdSave_customers(parsed.records, name);
+  window.__pdHnwMeta = null;
   // Persist raw text alongside the record array
   try {
     var stored = JSON.parse(localStorage.getItem('geo_pd_pd_customers_datasets')||'{}');

@@ -313,6 +313,7 @@ footer {
   .hero h2 { font-size: 22px; }
 }
 </style>
+<script src="../../pd_csv.js"></script>
 </head>
 <body>
 
@@ -907,33 +908,12 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTool();
     catch(e) { return ''; }
   }
 
-  // Normalise a potential postcode string (same logic as the tools)
-  function normalisePC(s) {
-    if (!s) return null;
-    var c = s.replace(/\s+/g,'').toUpperCase();
-    if (c.length >= 5 && c.length <= 7) return c.slice(0,-3) + ' ' + c.slice(-3);
-    return null;
-  }
-
-  // Extract postcodes from raw CSV/text, matching the tools' parseCustomers behaviour:
-  // one postcode per row, duplicates kept (multiple customers at same postcode = real data),
-  // header row skipped, normalisePC fallback on last/first cell.
-  function extractPostcodes(text) {
-    var lines = text.replace(/\r/g,'').trim().split('\n').filter(function(l){return l.trim();});
-    var results = [];
-    var isHdr = function(l) { return /postcode|address|name|customer|email/i.test(l); };
-    var start = lines.length && isHdr(lines[0]) ? 1 : 0;
-    for (var i = start; i < lines.length; i++) {
-      var parts = lines[i].split(',').map(function(s){return s.trim().replace(/^["']|["']$/g,'');});
-      var pc = null;
-      for (var j = 0; j < parts.length; j++) {
-        var m = parts[j].match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
-        if (m) { pc = normalisePC(m[1]); if (pc) break; }
-      }
-      if (!pc) pc = normalisePC(parts[parts.length-1]) || normalisePC(parts[0]);
-      if (pc) results.push(pc);
-    }
-    return results;
+  /* Parse with the shared module so datasets saved here carry the same columns
+     the tools expect. Returns {records, meta}; records are full objects
+     ({postcode, name, value, group, ref}), not bare postcode strings. */
+  function parseDataset(text) {
+    var parsed = PDCSV.records(text);
+    return { records: parsed.records, meta: parsed };
   }
 
   function renderManager() {
@@ -996,16 +976,25 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTool();
     if (st) st.textContent = 'Reading file...';
     var r = new FileReader();
     r.onload = function(e) {
-      var postcodes = extractPostcodes(e.target.result);
-      if (!postcodes.length) {
+      var parsed = parseDataset(e.target.result);
+      var recs = parsed.records;
+      if (!recs.length) {
         if (st) st.textContent = 'No UK postcodes found in file. Please check the format.';
         return;
       }
       var all = _all();
-      all[name] = { data: postcodes, count: postcodes.length, savedAt: new Date().toISOString() };
+      // Store full records AND the column metadata, so every tool picks up
+      // name / revenue / owner columns without a re-upload.
+      all[name] = { data: recs, count: recs.length, savedAt: new Date().toISOString(),
+                    meta: parsed.meta };
       _save(all);
       localStorage.setItem(ACT_KEY, name);
-      if (st) st.textContent = 'Saved "' + name + '" (' + postcodes.length.toLocaleString() + ' postcodes).';
+      var extras = [];
+      if (parsed.meta.hasName)  extras.push(parsed.meta.nameLabel);
+      if (parsed.meta.hasValue) extras.push(parsed.meta.valueLabel);
+      if (parsed.meta.hasGroup) extras.push(parsed.meta.groupLabel);
+      if (st) st.textContent = 'Saved "' + name + '" (' + recs.length.toLocaleString() + ' postcodes)'
+        + (extras.length ? ' — columns: ' + extras.join(', ') + '.' : '.');
       if (ni) ni.value = '';
       if (fi) fi.value = '';
       renderManager();
