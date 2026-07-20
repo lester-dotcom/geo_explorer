@@ -943,7 +943,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTool();
           + '<td style="padding:6px 8px;text-align:right;color:#374151">' + (info.count||0).toLocaleString() + '</td>'
           + '<td style="padding:6px 8px;text-align:right;color:#6b7280">' + fmtDate(info.savedAt) + '</td>'
           + '<td style="padding:6px 8px;text-align:right">'
-          + '<button onclick="pdLauncherDelete(' + JSON.stringify(n) + ')" style="font-size:11px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 6px">Delete</button>'
+          // JSON.stringify emits double quotes, which would terminate this
+          // double-quoted attribute early and leave onclick as "pdLauncherDelete(" —
+          // a syntax error, so Delete silently did nothing. Escape them.
+          + '<button onclick="pdLauncherDelete(' + JSON.stringify(n).replace(/"/g,'&quot;') + ')" style="font-size:11px;color:#ef4444;background:none;border:none;cursor:pointer;padding:2px 6px">Delete</button>'
           + '</td></tr>';
       });
       listHtml += '</tbody></table>';
