@@ -319,6 +319,7 @@ textarea::placeholder { color: var(--muted); }
         <div class="legend-grad"></div>
         <span>High</span>
       </div>
+      <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
       <button class="export-btn" onclick="exportCSV()">Export CSV ↓</button>
       <button class="export-btn" id="briefBtn" onclick="generateCustomerBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c;margin-left:6px">📄 Client brief</button>
     </div>
@@ -330,6 +331,7 @@ textarea::placeholder { color: var(--muted); }
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="../../valid_sectors.js"></script>
 <script src="../../pd_csv.js"></script>
+<script src="../../pd_map_pdf.js"></script>
 <script>
 /*
  (c) 2014, Vladimir Agafonkin
@@ -571,7 +573,9 @@ async function runAnalysis() {
     } else failed++;
   }
 
-  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+  // animate:false — a filter change can fire a second fit before the first
+  // animation finishes, which would swallow it and leave the old view.
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], animate: false });
 
   // Default: show dots
   layerState = { dots: true, heat: false, district: false };
@@ -1120,6 +1124,21 @@ function loadSample() {
     'TN1 1AA','GU1 4YP','SO14 7FJ','PO1 1AA','BN1 1AA','CT1 1AA','ME1 1AA'];
   document.getElementById('pasteArea').value = 'postcode\n' + pcs.join('\n');
   parseCSV(document.getElementById('pasteArea').value);
+}
+
+// ── Map PDF export ────────────────────────────────────────────────────────
+async function exportMapPDF() {
+  if (!map) return;
+  const parts = [];
+  if (resultData.length) parts.push(`${resultData.length.toLocaleString()} customers mapped`);
+  if (csvMeta && csvMeta.hasValue) parts.push(`${esc(csvMeta.valueLabel)}: ${PDCSV.fmtValue(PDCSV.sumValue(resultData))}`);
+  if (activeGroups) parts.push(`${csvMeta.groupLabel}: ${[...activeGroups].join(', ')}`);
+  parts.push(new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }));
+  setStatus('Preparing map for print…');
+  await PDMapPDF.export(map, {
+    caption: parts.join('  ·  '),
+    onRestore: () => setStatus('Map exported. Choose "Save as PDF" in the print dialog.', 'success')
+  });
 }
 </script>
 

@@ -318,6 +318,7 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
     </div>
 
     <div class="export-row">
+      <button class="exp-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
       <button id="exp-xlsx" class="exp-btn" onclick="exportXLSX()" style="display:none">↓ Export XLSX</button>
       <button id="exp-brief" class="exp-btn" onclick="generateBrief()" style="display:none">📄 Brief</button>
     </div>
@@ -329,6 +330,7 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="../../pd_csv.js"></script>
+<script src="../../pd_map_pdf.js"></script>
 <script src="../../valid_sectors.js"></script>
 <script src="../../dwelling_data.js"></script>
 <script>
@@ -937,6 +939,16 @@ function updateCustomerStats() {
 }
 
 buildLayer(currentMode);
+
+// ── Map PDF export ────────────────────────────────────────────────────────
+async function exportMapPDF() {
+  if (!map) return;
+  const parts = [];
+  if (typeof currentMode !== 'undefined' && currentMode) parts.push(`Mode: ${currentMode}`);
+  if (typeof customerData !== 'undefined' && customerData.length) parts.push(`${customerData.length.toLocaleString()} customer postcodes`);
+  parts.push(new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }));
+  await PDMapPDF.export(map, { caption: parts.join('  ·  ') });
+}
 </script>
 
 <script>

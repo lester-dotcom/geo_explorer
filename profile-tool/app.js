@@ -490,6 +490,7 @@ function renderResults() {
 
   <div class="export-row">
     <button class="export-btn green" onclick="exportProfile()">↓ Export profile CSV</button>
+    <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
     <button class="export-btn" onclick="generateBrief()" style="background:#4c565c;color:#fff;border-color:#4c565c">📄 Generate client brief</button>
   </div>
 
@@ -2701,7 +2702,9 @@ function renderDistrictMap() {
   document.getElementById('map-legend').textContent =
     isUnder ? 'Red = biggest gap · Amber = moderate · Green = mild'
             : 'Green = strong match · Amber = good · Grey = moderate';
-  if (bounds.length) districtMap.fitBounds(bounds, {padding:[40,40]});
+  // animate:false — a filter change can fire a second fit before the first
+  // animation finishes, which would swallow it and leave the old view.
+  if (bounds.length) districtMap.fitBounds(bounds, {padding:[40,40], animate:false});
 }
 
 const _rl = renderLookalikes;
@@ -2718,3 +2721,31 @@ renderUnderindex = function(r) {
   if (btn) btn.style.display = r.length ? 'block' : 'none';
   if (districtMapOpen) renderDistrictMap();
 };
+
+// ── Map PDF export ────────────────────────────────────────────────────────
+async function exportMapPDF() {
+  // The map lives in a collapsible panel that is rebuilt whenever results
+  // re-render, which leaves districtMapOpen out of step with the DOM. Resync
+  // from the panel itself, then open it if needed so the export has a sized map.
+  const panel = document.getElementById('district-map-panel');
+  if (panel && profileData) {
+    districtMapOpen = panel.classList.contains('open');
+    if (!districtMapOpen) {
+      toggleDistrictMap();
+      await new Promise(r => setTimeout(r, 700));
+    }
+    if (districtMap) districtMap.invalidateSize();
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (!districtMap) {
+    alert(profileData ? 'Open "Show on map" first, then export.'
+                      : 'Build a profile first — the map appears with the results.');
+    return;
+  }
+  const parts = [];
+  if (profileData) parts.push(`${profileData.enriched.length.toLocaleString()} postcodes profiled`);
+  if (csvMeta && csvMeta.hasValue) parts.push(`${csvMeta.valueLabel}: ${PDCSV.fmtValue(PDCSV.sumValue(profileData.enriched))}`);
+  if (activeGroups) parts.push(`${csvMeta.groupLabel}: ${[...activeGroups].join(', ')}`);
+  parts.push(new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }));
+  await PDMapPDF.export(districtMap, { caption: parts.join('  ·  ') });
+}

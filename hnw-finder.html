@@ -220,6 +220,7 @@
         <span>Higher affluence</span>
       </div>
       <button class="export-btn" id="briefBtn" onclick="generateHNWBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Client brief</button>
+      <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
       <button class="export-btn" id="exportBtn" onclick="exportXLSX()" disabled>Export XLSX ↓</button>
     </div>
     <div style="position:relative;flex:1;display:flex;flex-direction:column">
@@ -230,6 +231,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="pd_map_pdf.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="profile-tool/valid_districts.js"></script>
 <script src="valid_sectors.js"></script>
@@ -792,6 +794,15 @@ if (typeof HNW_DATA === 'undefined') {
   document.getElementById('statusMsg').className = 'status-msg success';
 }
 
+
+// ── Map PDF export ────────────────────────────────────────────────────────
+async function exportMapPDF() {
+  if (!map) return;
+  const parts = [];
+  if (typeof customerData !== 'undefined' && customerData.length) parts.push(`${customerData.length.toLocaleString()} customer postcodes`);
+  parts.push(new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }));
+  await PDMapPDF.export(map, { caption: parts.join('  ·  ') });
+}
 </script>
 
 <script>
