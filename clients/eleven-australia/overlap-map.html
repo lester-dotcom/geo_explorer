@@ -85,14 +85,33 @@
   --radius: 10px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: "DM Sans", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+body { font-family: "DM Sans", sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 header { background: #fff; border-bottom: 3px solid var(--pd-green); padding: 10px 20px; display: flex; align-items: center; gap: 16px; }
 .header-logo { height: 36px; }
 .header-divider { width: 1px; height: 28px; background: var(--border); }
 header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 
-.layout { display: grid; grid-template-columns: 330px 1fr; flex: 1; height: calc(100vh - 59px); }
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.layout { display: grid; grid-template-columns: 380px 1fr; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+
+/* Map-only mode: used to render a clean PDF of the current view. Applied as a
+   real class (not print-only) so Leaflet can invalidateSize and load tiles at
+   the new dimensions before the print dialog opens. */
+body.pd-map-only header,
+body.pd-map-only .sidebar,
+body.pd-map-only .map-toolbar,
+body.pd-map-only #isolation-hint { display: none !important; }
+body.pd-map-only .layout { grid-template-columns: 1fr; height: 100vh; }
+.map-print-caption { display: none; }
+body.pd-map-only .map-print-caption {
+  display: block; position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+  background: rgba(255,255,255,0.92); border-top: 1px solid var(--border);
+  padding: 6px 12px; font-size: 11px; color: var(--text);
+}
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  body.pd-map-only .leaflet-control-zoom { display: none !important; }
+}
 
 .ds-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .ds-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
@@ -347,6 +366,8 @@ textarea::placeholder { color: var(--muted); }
       </div>
 
       <div style="display:flex;gap:5px;margin-left:auto">
+        <button class="export-btn" onclick="resetMapView()" title="Re-centre the map on your data">⤾ Reset view</button>
+        <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
         <button class="export-btn" id="exp-served" onclick="exportServed()" style="display:none;background:#e8f7f0;border-color:#18a058;color:#145c38">↓ Served CSV</button>
         <button class="export-btn" id="exp-gaps" onclick="exportGaps()" style="display:none;background:#fdf0f0;border-color:#e24b4a;color:#b33030">↓ Gaps CSV</button>
         <button class="export-btn" onclick="exportAll()">↓ Export all</button>
@@ -354,6 +375,8 @@ textarea::placeholder { color: var(--muted); }
       </div>
     </div>
     <div id="map"></div>
+    <!-- Caption stamped onto the printed map so the PDF is self-explanatory -->
+    <div class="map-print-caption" id="mapPrintCaption"></div>
     <!-- Isolation mode hint bar -->
     <div id="isolation-hint" style="display:none;position:absolute;bottom:0;left:330px;right:0;z-index:999;background:rgba(30,30,30,0.85);color:#fff;font-size:12px;padding:7px 16px;align-items:center;gap:12px;backdrop-filter:blur(4px)">
       <span id="isolation-label"></span>
@@ -416,11 +439,73 @@ let layerOn = {
 
 // ── Map init ──────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
-  map = L.map('map').setView([52.5, -1.5], 6);
+  // scrollWheelZoom off by default: scrolling the page over the map used to
+  // zoom it unintentionally, which was the main way the view got lost.
+  // Click the map to enable it; it turns off again when the pointer leaves.
+  map = L.map('map', { scrollWheelZoom: false }).setView([52.5, -1.5], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom: 18
   }).addTo(map);
+
+  map.on('click', () => { map.scrollWheelZoom.enable(); showZoomHint(false); });
+  map.on('mouseout', () => map.scrollWheelZoom.disable());
+  map.getContainer().addEventListener('wheel', e => {
+    if (!map.scrollWheelZoom.enabled()) showZoomHint(true);
+  }, { passive: true });
 });
+
+let _zoomHintTimer = null;
+function showZoomHint(show) {
+  let el = document.getElementById('pd-zoom-hint');
+  if (!show) { if (el) el.remove(); return; }
+  if (el) { clearTimeout(_zoomHintTimer); }
+  else {
+    el = document.createElement('div');
+    el.id = 'pd-zoom-hint';
+    el.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'z-index:1000;background:rgba(30,30,30,0.82);color:#fff;padding:8px 16px;border-radius:8px;' +
+      'font-size:12px;pointer-events:none;backdrop-filter:blur(3px)';
+    el.textContent = 'Click the map to zoom with the scroll wheel';
+    document.getElementById('map').appendChild(el);
+  }
+  _zoomHintTimer = setTimeout(() => { const e = document.getElementById('pd-zoom-hint'); if (e) e.remove(); }, 1600);
+}
+
+/* Re-fit the map to whatever is currently plotted — the way back after the
+   view has been dragged or zoomed somewhere unhelpful. */
+function resetMapView() {
+  const pts = [...cResult, ...lResult].filter(r => r.lat != null).map(r => [r.lat, r.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40], animate: false });
+  else map.setView([52.5, -1.5], 6);
+}
+
+/* Print just the map at its current view. Switching to map-only mode as a real
+   class (rather than print-only CSS) lets Leaflet resize and load tiles for the
+   new dimensions first — print-only CSS would leave blank tiles. */
+function exportMapPDF() {
+  if (!map) return;
+  const centre = map.getCenter(), zoom = map.getZoom();
+  const cap = document.getElementById('mapPrintCaption');
+  const parts = [`${cResult.length.toLocaleString()} customers`, `${lResult.length.toLocaleString()} locations`,
+                 `${radiusMiles}mi radius`];
+  if (activeGroups) parts.push(`${groupFilterLabel()}: ${[...activeGroups].join(', ')}`);
+  cap.textContent = parts.join('  ·  ') + '  ·  ' +
+    new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+
+  document.body.classList.add('pd-map-only');
+  map.invalidateSize();
+  map.setView(centre, zoom, { animate: false });   // hold the exact view across the resize
+
+  const restore = () => {
+    document.body.classList.remove('pd-map-only');
+    map.invalidateSize();
+    map.setView(centre, zoom, { animate: false });
+    window.removeEventListener('afterprint', restore);
+  };
+  window.addEventListener('afterprint', restore);
+  // Give tiles a moment to fill the resized canvas before the dialog opens.
+  setTimeout(() => { window.print(); setTimeout(restore, 500); }, 700);
+}
 
 // ── File inputs ───────────────────────────────────────────────────────────
 function setupFile(inputId, labelId, fileNameId, datasetKey, loadedClass) {
@@ -569,7 +654,9 @@ function setAllGroups(on) {
 
 function applyGroupFilter() {
   renderGroupFilter();
-  if (Object.keys(geocodeCache).length) rebuild({ fit: false });
+  // Zoom to the selected territory — with a filter on, the useful view is that
+  // AM's patch, not the whole country. Clearing the filter refits everything.
+  if (Object.keys(geocodeCache).length) rebuild({ fit: true });
 }
 
 function esc(s) {
@@ -722,8 +809,13 @@ function rebuild(opts) {
   }
 
   if (opts.fit) {
-    const bounds = [...cResult, ...lResult].map(r=>[r.lat,r.lng]);
-    if (bounds.length) map.fitBounds(bounds, {padding:[40,40]});
+    // With a group filter on, frame that territory's customers only — locations
+    // are not group-filtered, so including them would zoom back out nationally.
+    const src = (activeGroups && cResult.length) ? cResult : [...cResult, ...lResult];
+    const bounds = src.map(r=>[r.lat,r.lng]);
+    // animate:false — toggling a filter fires two fits in quick succession and
+    // an in-flight animation swallows the second one, leaving the old view.
+    if (bounds.length) map.fitBounds(bounds, {padding:[40,40], animate:false});
   }
 
   // Overlap calculation — tag each customer with nearest location

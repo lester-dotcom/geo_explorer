@@ -26,7 +26,7 @@
   --radius: 10px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 header {
   background: #ffffff;
@@ -40,9 +40,9 @@ header {
 .header-divider { width: 1px; height: 28px; background: var(--border); }
 header h1 { font-size: 14px; font-weight: 400; color: var(--muted); letter-spacing: 0.01em; }
 
-.layout { display: grid; grid-template-columns: 310px 1fr; flex: 1; height: calc(100vh - 59px); }
+.layout { display: grid; grid-template-columns: 340px 1fr; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 18px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 18px; }
 .section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 8px; }
 
 /* Upload area — label wraps everything so entire zone is clickable */
@@ -752,6 +752,32 @@ function generateCustomerBrief() {
     ? ` · Filtered to ${groupLabel}: ${[...activeGroups].join(', ')}`
     : '';
 
+  /* Split the group breakdown into leaders and tail. The tail table is rendered
+     without a heading — just a gap — so it reads as a continuation. Rows never
+     appear twice: the tail is only what the top table did not already show. */
+  const GROUP_TOP_N = 10;
+  const groupTop    = groupRows.slice(0, GROUP_TOP_N);
+  const groupBottom = groupRows.slice(GROUP_TOP_N).slice(-GROUP_TOP_N);
+
+  const groupTable = (rows) => `
+  <table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--bg);text-align:left">
+      <th style="padding:6px 8px">${esc(groupLabel)}</th>
+      <th style="padding:6px 8px">Accounts</th>
+      ${briefHasValue?`<th style="padding:6px 8px">${esc(valueLabel)}</th><th style="padding:6px 8px">Share</th>`:''}
+      <th style="padding:6px 8px">Districts</th>
+    </tr></thead>
+    <tbody>
+    ${rows.map(g=>`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px;font-weight:500">${esc(g.group)}</td>
+      <td style="padding:6px 8px">${g.count.toLocaleString()}</td>
+      ${briefHasValue?`<td style="padding:6px 8px">${PDCSV.fmtValue(g.value)}</td>
+      <td style="padding:6px 8px">${totalValue?Math.round(g.value/totalValue*100):0}%</td>`:''}
+      <td style="padding:6px 8px">${g.districts}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>`;
+
   // Insights
   const insights = [];
   insights.push(`Customer base of <strong>${totalMapped.toLocaleString()}</strong> postcodes spans <strong>${Object.keys(dc).length} districts</strong> across <strong>${topRegions.length} regions</strong>${briefHasValue ? `, worth <strong>${PDCSV.fmtValue(totalValue)}</strong> in ${esc(valueLabel)}` : ''}.`);
@@ -870,26 +896,12 @@ function generateCustomerBrief() {
     ${insights.map(i=>`<div class="insight-item">${i}</div>`).join('')}
   </div>
 
-  <!-- Breakdown by group (e.g. account manager) -->
+  <!-- Breakdown by group (e.g. account manager): leaders, then a second
+       unlabelled table for the tail so both ends are visible at a glance. -->
   ${groupRows.length?`
   <div class="section-title">Breakdown by ${esc(groupLabel)}</div>
-  <table style="width:100%;border-collapse:collapse;font-size:11px">
-    <thead><tr style="background:var(--bg);text-align:left">
-      <th style="padding:6px 8px">${esc(groupLabel)}</th>
-      <th style="padding:6px 8px">Accounts</th>
-      ${briefHasValue?`<th style="padding:6px 8px">${esc(valueLabel)}</th><th style="padding:6px 8px">Share</th>`:''}
-      <th style="padding:6px 8px">Districts</th>
-    </tr></thead>
-    <tbody>
-    ${groupRows.map(g=>`<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:6px 8px;font-weight:500">${esc(g.group)}</td>
-      <td style="padding:6px 8px">${g.count.toLocaleString()}</td>
-      ${briefHasValue?`<td style="padding:6px 8px">${PDCSV.fmtValue(g.value)}</td>
-      <td style="padding:6px 8px">${totalValue?Math.round(g.value/totalValue*100):0}%</td>`:''}
-      <td style="padding:6px 8px">${g.districts}</td>
-    </tr>`).join('')}
-    </tbody>
-  </table>`:''}
+  ${groupTable(groupTop)}
+  ${groupBottom.length?`<div style="height:22px"></div>${groupTable(groupBottom)}`:''}`:''}
 
   <!-- Top districts by value -->
   ${topValueDists.length?`
