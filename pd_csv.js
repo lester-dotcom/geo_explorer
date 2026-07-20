@@ -313,6 +313,36 @@
     };
   }
 
+  /* True when a restored dataset predates column support: it has rows, but no
+     saved metadata and no row carries a name, value or group. Such a dataset
+     silently disables the new features, so tools surface a re-upload prompt. */
+  function isStaleDataset(recs, saved) {
+    if (saved && saved.columns) return false;
+    if (!recs || !recs.length) return false;
+    return !recs.some(function (r) {
+      return r && (r.name || r.group || r.value != null || r.ref);
+    });
+  }
+
+  /* Render (or remove) the re-upload notice above a given element.
+     Idempotent — safe to call on every restore. */
+  function showStaleNotice(show, anchorId, message) {
+    var existing = document.getElementById('pd-stale-notice');
+    if (!show) { if (existing) existing.remove(); return; }
+    if (existing) return;
+    var anchor = document.getElementById(anchorId);
+    if (!anchor) return;
+    var div = document.createElement('div');
+    div.id = 'pd-stale-notice';
+    div.style.cssText = 'margin:8px 0;padding:9px 11px;border:1px solid #f0a500;' +
+      'background:#fff8e6;border-radius:6px;font-size:11px;line-height:1.5;color:#6b5600';
+    div.innerHTML = '<strong>Re-upload to unlock new columns.</strong><br>' +
+      (message || 'This saved dataset was created before salon name, revenue and ' +
+                  'account manager support was added. Upload your CSV again to ' +
+                  'enable them.');
+    anchor.parentNode.insertBefore(div, anchor);
+  }
+
   function groupsOf(recs) {
     var seen = {};
     (recs || []).forEach(function (r) { if (r && r.group) seen[r.group] = 1; });
@@ -358,6 +388,8 @@
     parseRows: parseRows,
     records: records,
     metaFromRecords: metaFromRecords,
+    isStaleDataset: isStaleDataset,
+    showStaleNotice: showStaleNotice,
     detectColumns: detectColumns,
     normalisePC: normalisePC,
     extractPC: extractPC,

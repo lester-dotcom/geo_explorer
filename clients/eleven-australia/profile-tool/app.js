@@ -81,6 +81,7 @@ function parseCSV(text) {
   rawData = parsed.records;
   csvMeta = parsed;
   activeGroups = null;   // a new upload resets any territory filter
+  PDCSV.showStaleNotice(false, 'statusMsg');   // fresh upload clears the notice
 
   const bits = [];
   if (parsed.hasName)  bits.push(parsed.nameLabel);
@@ -113,6 +114,9 @@ window.pdRestoreMeta = function(saved) {
   csvMeta = PDCSV.metaFromRecords(rawData, saved);
   activeGroups = null;
   rankMode = 'count';
+  // A dataset saved before column support restores as bare postcodes and would
+  // silently hide the new features — tell the user to re-upload.
+  PDCSV.showStaleNotice(PDCSV.isStaleDataset(rawData, saved), 'statusMsg');
   renderGroupFilter();
   renderRankPanel();
 };
