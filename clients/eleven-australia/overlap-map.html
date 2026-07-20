@@ -94,14 +94,27 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 .layout { display: grid; grid-template-columns: 380px 1fr; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
 
-/* Map-only mode: used to render a clean PDF of the current view. Applied as a
-   real class (not print-only) so Leaflet can invalidateSize and load tiles at
-   the new dimensions before the print dialog opens. */
+/* Map-only mode: renders a clean PDF of the current map view.
+
+   The container is pinned to exact A4-landscape pixel dimensions (297×210mm at
+   96dpi) rather than 100vw/100vh. Leaflet positions tiles and markers in pixels
+   for a known container size; if the browser re-lays the page out for paper the
+   map would be sized differently from what Leaflet was told, and the printed
+   view drifts away from what is on screen. A fixed px box that already matches
+   the paper removes that mismatch. */
 body.pd-map-only header,
 body.pd-map-only .sidebar,
 body.pd-map-only .map-toolbar,
-body.pd-map-only #isolation-hint { display: none !important; }
-body.pd-map-only .layout { grid-template-columns: 1fr; height: 100vh; }
+body.pd-map-only #isolation-hint,
+body.pd-map-only .leaflet-control-zoom,
+/* Attribution would sit on top of the caption bar; it is reproduced in the
+   caption text instead so the map stays properly credited. */
+body.pd-map-only .leaflet-control-attribution { display: none !important; }
+body.pd-map-only { height: auto; overflow: visible; }
+body.pd-map-only .layout { display: block; height: auto; overflow: visible; }
+body.pd-map-only .map-area { width: 1123px; height: 794px; overflow: hidden; position: relative; }
+body.pd-map-only #map { width: 1123px; height: 794px; }
+
 .map-print-caption { display: none; }
 body.pd-map-only .map-print-caption {
   display: block; position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
@@ -109,8 +122,13 @@ body.pd-map-only .map-print-caption {
   padding: 6px 12px; font-size: 11px; color: var(--text);
 }
 @media print {
-  @page { size: A4 landscape; margin: 8mm; }
-  body.pd-map-only .leaflet-control-zoom { display: none !important; }
+  @page { size: A4 landscape; margin: 0; }
+  /* Without this the browser drops background colours, so the index pins print
+     as empty white circles instead of red/amber/green. */
+  body.pd-map-only, body.pd-map-only * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 
 .ds-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -417,7 +435,7 @@ textarea::placeholder { color: var(--muted); }
     }
   } catch(e) {}
 })();
-let map;
+let map, baseTiles;               // baseTiles kept so the PDF export can await tile loads
 let cData = [], lData = [];       // parsed postcode rows
 let cResult = [], lResult = [];   // geocoded results (filtered by activeGroups)
 let cMeta = null, lMeta = null;   // PDCSV parse metadata: which columns were found
@@ -443,7 +461,7 @@ window.addEventListener('load', () => {
   // zoom it unintentionally, which was the main way the view got lost.
   // Click the map to enable it; it turns off again when the pointer leaves.
   map = L.map('map', { scrollWheelZoom: false }).setView([52.5, -1.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  baseTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom: 18
   }).addTo(map);
 
@@ -482,29 +500,51 @@ function resetMapView() {
 /* Print just the map at its current view. Switching to map-only mode as a real
    class (rather than print-only CSS) lets Leaflet resize and load tiles for the
    new dimensions first — print-only CSS would leave blank tiles. */
-function exportMapPDF() {
+async function exportMapPDF() {
   if (!map) return;
-  const centre = map.getCenter(), zoom = map.getZoom();
+  // Preserve the geographic AREA on screen, not the zoom level. The print box is
+  // a different shape from the on-screen pane, so re-using the zoom would show a
+  // different region; fitting the same bounds keeps what the user is looking at.
+  const bounds = map.getBounds();
+  const screenCentre = map.getCenter(), screenZoom = map.getZoom();
+
   const cap = document.getElementById('mapPrintCaption');
   const parts = [`${cResult.length.toLocaleString()} customers`, `${lResult.length.toLocaleString()} locations`,
                  `${radiusMiles}mi radius`];
   if (activeGroups) parts.push(`${groupFilterLabel()}: ${[...activeGroups].join(', ')}`);
   cap.textContent = parts.join('  ·  ') + '  ·  ' +
-    new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+    new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) +
+    '  ·  Map data © OpenStreetMap contributors';
 
+  setStatus('Preparing map for print…');
   document.body.classList.add('pd-map-only');
-  map.invalidateSize();
-  map.setView(centre, zoom, { animate: false });   // hold the exact view across the resize
+  map.invalidateSize({ animate: false });
+  map.fitBounds(bounds, { animate: false });
 
+  // Wait for tiles to finish loading at the new size, or give up after 6s —
+  // printing early is what produced half-blank maps.
+  await new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; clearTimeout(t); resolve(); } };
+    const t = setTimeout(finish, 6000);
+    if (baseTiles && baseTiles.isLoading && !baseTiles.isLoading()) { setTimeout(finish, 250); }
+    else if (baseTiles) baseTiles.once('load', () => setTimeout(finish, 250));
+    else setTimeout(finish, 800);
+  });
+
+  let restored = false;
   const restore = () => {
+    if (restored) return;
+    restored = true;
     document.body.classList.remove('pd-map-only');
-    map.invalidateSize();
-    map.setView(centre, zoom, { animate: false });
+    map.invalidateSize({ animate: false });
+    map.setView(screenCentre, screenZoom, { animate: false });
     window.removeEventListener('afterprint', restore);
+    setStatus('Map exported. Choose "Save as PDF" in the print dialog.', 'success');
   };
   window.addEventListener('afterprint', restore);
-  // Give tiles a moment to fill the resized canvas before the dialog opens.
-  setTimeout(() => { window.print(); setTimeout(restore, 500); }, 700);
+  window.print();
+  setTimeout(restore, 800);   // fallback for browsers that skip afterprint
 }
 
 // ── File inputs ───────────────────────────────────────────────────────────
