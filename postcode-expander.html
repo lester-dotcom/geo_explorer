@@ -362,10 +362,9 @@ async function generateMeta() {
         const r = await fetch(url);
         if (!r.ok) return;
         const d = await r.json();
+        // If autocomplete returns anything the sector is real — store the sector itself
         if (d.status === 200 && Array.isArray(d.result) && d.result.length) {
-          for (const pc of d.result) {
-            if (allPostcodes.size < MAX_TOTAL) allPostcodes.add(pc);
-          }
+          allPostcodes.add(sector);
         }
       } catch(e) {}
     }));
