@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Postcode Expander — Geo Intelligence Suite</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --pd-indigo:#4f46e5;--pd-indigo-light:#eef2ff;--pd-indigo-border:#e0e7ff;
+    --pd-green:#059669;--pd-green-light:#ecfdf5;
+    --pd-amber:#d97706;--pd-amber-light:#fffbeb;
+    --pd-red:#dc2626;--pd-red-light:#fef2f2;
+    --text:#1f2937;--muted:#6b7280;--border:#e5e7eb;--bg:#f9fafb;--card:#fff;
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+  /* ── Header ── */
+  .header{background:var(--pd-indigo);padding:18px 32px;display:flex;align-items:center;gap:14px}
+  .header-logo{width:36px;height:36px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:var(--pd-indigo);flex-shrink:0}
+  .header h1{color:#fff;font-size:18px;font-weight:700}
+  .header p{color:rgba(255,255,255,.7);font-size:13px;margin-top:2px}
+
+  /* ── Layout ── */
+  .main{max-width:1100px;margin:0 auto;padding:28px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:800px){.main{grid-template-columns:1fr;padding:16px}}
+  .card{background:var(--card);border-radius:14px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.07);border:1px solid var(--border)}
+  .card-title{font-size:14px;font-weight:700;color:var(--pd-indigo);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  .card-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+
+  /* ── Input ── */
+  textarea{width:100%;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;font-family:monospace;resize:vertical;min-height:180px;line-height:1.6;color:var(--text)}
+  textarea:focus{outline:none;border-color:var(--pd-indigo)}
+  .file-row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+  input[type=file]{font-size:12px;color:var(--muted)}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px}
+
+  /* ── Buttons ── */
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn-primary{background:var(--pd-indigo);color:#fff}
+  .btn-primary:hover:not(:disabled){opacity:.88}
+  .btn-google{background:#1a73e8;color:#fff}
+  .btn-google:hover:not(:disabled){opacity:.88}
+  .btn-meta{background:#1877f2;color:#fff}
+  .btn-meta:hover:not(:disabled){opacity:.88}
+  .btn-ghost{background:#f3f4f6;color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover:not(:disabled){background:#e9eaec}
+  .btn-sm{padding:5px 10px;font-size:11px}
+
+  /* ── Tag pills ── */
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;min-height:32px}
+  .tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+  .tag-area{background:#eef2ff;color:var(--pd-indigo);border:1px solid #c7d2fe}
+  .tag-outcode{background:#f0fdf4;color:var(--pd-green);border:1px solid #a7f3d0}
+  .tag-unknown{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+
+  /* ── Progress ── */
+  .progress-wrap{display:none;margin:10px 0}
+  .progress-bar-bg{height:6px;background:#e5e7eb;border-radius:4px;overflow:hidden}
+  .progress-bar{height:100%;background:var(--pd-indigo);border-radius:4px;transition:width .2s}
+  .progress-label{font-size:11px;color:var(--muted);margin-top:4px}
+
+  /* ── Results ── */
+  .results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .results-count{font-size:12px;color:var(--muted)}
+  textarea.results{min-height:280px;background:#f9fafb;font-size:11.5px}
+  .copy-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+
+  /* ── Status badge ── */
+  .status{font-size:12px;padding:4px 10px;border-radius:20px;font-weight:600;display:inline-block;margin:8px 0}
+  .status-idle{background:#f3f4f6;color:var(--muted)}
+  .status-running{background:#eef2ff;color:var(--pd-indigo)}
+  .status-done{background:var(--pd-green-light);color:var(--pd-green)}
+  .status-warn{background:var(--pd-amber-light);color:var(--pd-amber)}
+  .status-err{background:var(--pd-red-light);color:var(--pd-red)}
+
+  /* ── Full-width expand panel ── */
+  .full-row{grid-column:1/-1}
+  .expand-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0}
+  @media(max-width:800px){.expand-grid{grid-template-columns:1fr}}
+  .mode-card{border:2px solid var(--border);border-radius:12px;padding:18px}
+  .mode-card h3{font-size:14px;font-weight:700;margin-bottom:4px}
+  .mode-card p{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .mode-card.google{border-color:#1a73e8;background:#f0f7ff}
+  .mode-card.meta{border-color:#1877f2;background:#f0f4ff}
+
+  .divider{grid-column:1/-1;border:none;border-top:1px solid var(--border);margin:4px 0}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">G</div>
+  <div>
+    <h1>Postcode Expander</h1>
+    <p>Turn postal areas or outward codes into Google or Meta ad-ready targeting lists</p>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ── Input card ── -->
+  <div class="card">
+    <div class="card-title">📋 Paste your list</div>
+    <div class="card-sub">Paste postal areas (AL, CM, B…), outward codes (AL1, PE12…), or a mix. One per line, comma-separated, or just copy from a PDF.</div>
+    <textarea id="inputArea" placeholder="AL&#10;CM&#10;CV&#10;B&#10;BN&#10;PE1&#10;PE2&#10;SW1A…"></textarea>
+    <div class="file-row">
+      <span class="hint">Or upload a CSV / TXT:</span>
+      <input type="file" id="fileInput" accept=".csv,.txt">
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="parseInput()">🔍 Detect codes</button>
+      <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <!-- ── Detected codes card ── -->
+  <div class="card">
+    <div class="card-title">✅ Detected codes</div>
+    <div class="card-sub">Areas (letters only) are expanded to outward codes via the postcodes API. Outward codes are used directly.</div>
+    <div class="tags" id="tagList"><span style="color:var(--muted);font-size:12px">Paste a list and click Detect codes…</span></div>
+    <div id="detectedSummary" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+
+    <div class="progress-wrap" id="detectProgress">
+      <div class="progress-bar-bg"><div class="progress-bar" id="detectBar" style="width:0%"></div></div>
+      <div class="progress-label" id="detectLabel">Validating…</div>
+    </div>
+
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="copyDetected()" id="btnCopyDetected" disabled>Copy outward codes</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadDetected()" id="btnDlDetected" disabled>Download TXT</button>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── Expand panel (full width) ── -->
+  <div class="full-row">
+    <div class="expand-grid">
+
+      <!-- Google -->
+      <div class="mode-card google">
+        <h3>🎯 Google Ads</h3>
+        <p>Outward codes (districts) formatted for Google's location targeting — one per line, ready to paste or bulk upload.</p>
+        <button class="btn btn-google" id="btnGoogle" onclick="generateGoogle()" disabled>Generate Google list</button>
+        <div class="progress-wrap" id="googleProgress" style="margin-top:10px">
+          <div class="progress-bar-bg"><div class="progress-bar" id="googleBar" style="width:0%;background:#1a73e8"></div></div>
+          <div class="progress-label" id="googleLabel"></div>
+        </div>
+        <div class="results-header" style="margin-top:12px">
+          <span class="results-count" id="googleCount"></span>
+        </div>
+        <textarea class="results" id="googleResults" readonly placeholder="Google-ready list will appear here…"></textarea>
+        <div class="copy-row">
+          <button class="btn btn-ghost btn-sm" onclick="copyResults('googleResults')" id="btnCopyGoogle" disabled>Copy</button>
+          <button class="btn btn-ghost btn-sm" onclick="downloadResults('googleResults','google-targeting')" id="btnDlGoogle" disabled>Download CSV</button>
+        </div>
+      </div>
+
+      <!-- Meta -->
+      <div class="mode-card meta">
+        <h3>📘 Meta Ads</h3>
+        <p>Full UK postcodes for Meta Custom Audiences — fetched from postcodes.io. Large areas may take a moment. Note: very large areas (&gt;5,000 postcodes) are truncated for usability.</p>
+        <button class="btn btn-meta" id="btnMeta" onclick="generateMeta()" disabled>Generate Meta list</button>
+        <div class="progress-wrap" id="metaProgress" style="margin-top:10px">
+          <div class="progress-bar-bg"><div class="progress-bar" id="metaBar" style="width:0%;background:#1877f2"></div></div>
+          <div class="progress-label" id="metaLabel"></div>
+        </div>
+        <div class="results-header" style="margin-top:12px">
+          <span class="results-count" id="metaCount"></span>
+        </div>
+        <textarea class="results" id="metaResults" readonly placeholder="Meta-ready list will appear here…"></textarea>
+        <div class="copy-row">
+          <button class="btn btn-ghost btn-sm" onclick="copyResults('metaResults')" id="btnCopyMeta" disabled>Copy</button>
+          <button class="btn btn-ghost btn-sm" onclick="downloadResults('metaResults','meta-postcodes')" id="btnDlMeta" disabled>Download CSV</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let validOutcodes = []; // final list of validated outward codes
+
+// ── File upload ────────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function() {
+  if (!this.files[0]) return;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('inputArea').value = e.target.result; };
+  r.readAsText(this.files[0]);
+});
+
+// ── Parse input ───────────────────────────────────────────────────────────────
+function extractCodes(text) {
+  // Split on whitespace, commas, semicolons, newlines — grab anything that looks postcode-ish
+  const tokens = text.toUpperCase().split(/[\s,;\n\r|\/\\]+/).map(t => t.trim()).filter(Boolean);
+  const codes = [];
+  for (const t of tokens) {
+    // Match postal area (1-2 uppercase letters only, no digits) OR outward code (letters + digits [+ letter])
+    if (/^[A-Z]{1,2}$/.test(t)) {
+      codes.push({ raw: t, type: 'area' });
+    } else if (/^[A-Z]{1,2}\d{1,2}[A-Z]?$/.test(t)) {
+      codes.push({ raw: t, type: 'outcode' });
+    }
+    // Ignore full postcodes, numbers, other noise
+  }
+  // Deduplicate by raw value
+  const seen = new Set();
+  return codes.filter(c => { if (seen.has(c.raw)) return false; seen.add(c.raw); return true; });
+}
+
+// Generate candidate outward codes for a postal area
+function candidatesForArea(area) {
+  const candidates = [];
+  // Numbers 1-80 cover virtually all UK districts
+  for (let n = 1; n <= 80; n++) {
+    candidates.push(area + n);
+    // Some areas have lettered sub-districts e.g. W1A, EC1A, SW1A
+    for (const l of ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','R','S','T','U','V','W','X','Y']) {
+      candidates.push(area + n + l);
+    }
+  }
+  return candidates;
+}
+
+async function validateOutcode(code) {
+  try {
+    const r = await fetch('https://api.postcodes.io/outcodes/' + encodeURIComponent(code));
+    if (!r.ok) return false;
+    const d = await r.json();
+    return d.status === 200 && !!d.result;
+  } catch(e) { return false; }
+}
+
+async function parseInput() {
+  const raw = document.getElementById('inputArea').value.trim();
+  if (!raw) return;
+
+  const detected = extractCodes(raw);
+  if (!detected.length) {
+    showTags([], 'No recognisable postal areas or outward codes found.');
+    return;
+  }
+
+  // Separate areas (need expansion) from outward codes (validate directly)
+  const areas   = detected.filter(c => c.type === 'area').map(c => c.raw);
+  const outcodes = detected.filter(c => c.type === 'outcode').map(c => c.raw);
+
+  const tagList = document.getElementById('tagList');
+  tagList.innerHTML = detected.map(c =>
+    `<span class="tag tag-${c.type}">${c.raw} <small style="opacity:.6">${c.type === 'area' ? 'area' : 'outcode'}</small></span>`
+  ).join('');
+  document.getElementById('detectedSummary').textContent =
+    `${areas.length} area${areas.length !== 1 ? 's' : ''} to expand, ${outcodes.length} outward code${outcodes.length !== 1 ? 's' : ''} detected`;
+
+  // Show progress
+  const prog = document.getElementById('detectProgress');
+  const bar  = document.getElementById('detectBar');
+  const lbl  = document.getElementById('detectLabel');
+  prog.style.display = 'block';
+
+  validOutcodes = [];
+  let done = 0;
+
+  // Validate direct outcodes first
+  const directCandidates = outcodes;
+  let directDone = 0;
+  const CONC = 8;
+  for (let i = 0; i < directCandidates.length; i += CONC) {
+    const batch = directCandidates.slice(i, i + CONC);
+    const results = await Promise.all(batch.map(c => validateOutcode(c)));
+    results.forEach((ok, j) => { if (ok) validOutcodes.push(directCandidates[i + j]); });
+    directDone += batch.length;
+    done = directDone;
+    const totalCandidates = directCandidates.length + areas.length * 15; // rough estimate
+    bar.style.width = Math.min(100, Math.round(done / totalCandidates * 100)) + '%';
+    lbl.textContent = `Validating outward codes… ${done} checked`;
+  }
+
+  // Expand each area
+  let areaDone = 0;
+  for (const area of areas) {
+    const candidates = candidatesForArea(area);
+    let areaValid = [];
+    let foundAny = false;
+    for (let i = 0; i < candidates.length; i += CONC) {
+      const batch = candidates.slice(i, i + CONC);
+      const results = await Promise.all(batch.map(c => validateOutcode(c)));
+      results.forEach((ok, j) => {
+        if (ok) { areaValid.push(candidates[i + j]); foundAny = true; }
+      });
+      // Early exit: once we've gone 10+ consecutive misses after finding some
+      if (foundAny && i > 20) {
+        const lastFew = results.slice(-6);
+        if (lastFew.every(r => !r) && i > candidates.indexOf(area + '20')) break;
+      }
+    }
+    validOutcodes.push(...areaValid);
+    areaDone++;
+    lbl.textContent = `Expanding areas… ${areaDone}/${areas.length} done (${validOutcodes.length} outward codes found)`;
+    bar.style.width = Math.min(100, Math.round((directCandidates.length + areaDone * 15) / (directCandidates.length + areas.length * 15) * 100)) + '%';
+  }
+
+  // Deduplicate and sort
+  validOutcodes = [...new Set(validOutcodes)].sort();
+
+  bar.style.width = '100%';
+  lbl.textContent = `Done — ${validOutcodes.length} valid outward codes`;
+  document.getElementById('detectedSummary').textContent = `${validOutcodes.length} valid outward codes ready for export`;
+
+  // Enable action buttons
+  ['btnCopyDetected','btnDlDetected','btnGoogle','btnMeta'].forEach(id => {
+    document.getElementById(id).disabled = false;
+  });
+}
+
+// ── Google output ─────────────────────────────────────────────────────────────
+function generateGoogle() {
+  if (!validOutcodes.length) return;
+  const text = validOutcodes.join('\n');
+  document.getElementById('googleResults').value = text;
+  document.getElementById('googleCount').textContent = validOutcodes.length + ' outward codes';
+  document.getElementById('btnCopyGoogle').disabled = false;
+  document.getElementById('btnDlGoogle').disabled = false;
+}
+
+// ── Meta output ───────────────────────────────────────────────────────────────
+async function generateMeta() {
+  if (!validOutcodes.length) return;
+  const btn  = document.getElementById('btnMeta');
+  btn.disabled = true;
+  const prog = document.getElementById('metaProgress');
+  const bar  = document.getElementById('metaBar');
+  const lbl  = document.getElementById('metaLabel');
+  prog.style.display = 'block';
+
+  const MAX_TOTAL = 5000; // cap to avoid browser freezing
+  const allPostcodes = [];
+  const CONC = 4;
+
+  for (let i = 0; i < validOutcodes.length; i += CONC) {
+    if (allPostcodes.length >= MAX_TOTAL) break;
+    const batch = validOutcodes.slice(i, i + CONC);
+    await Promise.all(batch.map(async (outcode) => {
+      if (allPostcodes.length >= MAX_TOTAL) return;
+      try {
+        // Fetch all postcodes for this outward code
+        const r = await fetch('https://api.postcodes.io/postcodes?outcode=' + encodeURIComponent(outcode) + '&limit=100');
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.status === 200 && Array.isArray(d.result)) {
+          for (const pc of d.result) {
+            if (allPostcodes.length < MAX_TOTAL) allPostcodes.push(pc.postcode);
+          }
+        }
+      } catch(e) {}
+    }));
+    const pct = Math.round((i + CONC) / validOutcodes.length * 100);
+    bar.style.width = Math.min(100, pct) + '%';
+    lbl.textContent = `Fetching postcodes… ${Math.min(i + CONC, validOutcodes.length)}/${validOutcodes.length} districts (${allPostcodes.length.toLocaleString()} found)`;
+  }
+
+  bar.style.width = '100%';
+  const truncated = allPostcodes.length >= MAX_TOTAL;
+  lbl.textContent = `Done — ${allPostcodes.length.toLocaleString()} postcodes${truncated ? ' (capped at ' + MAX_TOTAL.toLocaleString() + ')' : ''}`;
+
+  const text = allPostcodes.join('\n');
+  document.getElementById('metaResults').value = text;
+  document.getElementById('metaCount').textContent = allPostcodes.length.toLocaleString() + ' postcodes' + (truncated ? ' (truncated)' : '');
+  document.getElementById('btnCopyMeta').disabled = false;
+  document.getElementById('btnDlMeta').disabled = false;
+  btn.disabled = false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showTags(codes, msg) {
+  document.getElementById('tagList').innerHTML = `<span style="color:var(--muted);font-size:12px">${msg}</span>`;
+}
+
+function copyDetected() {
+  navigator.clipboard.writeText(validOutcodes.join('\n'));
+}
+
+function downloadDetected() {
+  downloadText(validOutcodes.join('\n'), 'outward-codes.txt', 'text/plain');
+}
+
+function copyResults(id) {
+  const el = document.getElementById(id);
+  el.select();
+  navigator.clipboard.writeText(el.value);
+}
+
+function downloadResults(id, name) {
+  const text = document.getElementById(id).value;
+  downloadText(text, name + '.csv', 'text/csv');
+}
+
+function downloadText(text, filename, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function clearAll() {
+  document.getElementById('inputArea').value = '';
+  document.getElementById('tagList').innerHTML = '<span style="color:var(--muted);font-size:12px">Paste a list and click Detect codes…</span>';
+  document.getElementById('detectedSummary').textContent = '';
+  document.getElementById('detectProgress').style.display = 'none';
+  document.getElementById('googleResults').value = '';
+  document.getElementById('metaResults').value = '';
+  document.getElementById('googleCount').textContent = '';
+  document.getElementById('metaCount').textContent = '';
+  document.getElementById('googleProgress').style.display = 'none';
+  document.getElementById('metaProgress').style.display = 'none';
+  ['btnCopyDetected','btnDlDetected','btnGoogle','btnMeta','btnCopyGoogle','btnDlGoogle','btnCopyMeta','btnDlMeta'].forEach(id => {
+    document.getElementById(id).disabled = true;
+  });
+  validOutcodes = [];
+}
+</script>
+</body>
+</html>
