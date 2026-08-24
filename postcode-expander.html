@@ -329,6 +329,9 @@ function generateGoogle() {
 }
 
 // ── Meta output ───────────────────────────────────────────────────────────────
+// Strategy: for each outward code (e.g. "AL1"), generate sector candidates
+// ("AL1 1" … "AL1 9"), then use the postcodes.io autocomplete endpoint to get
+// up to 10 real full postcodes per sector.  Reliable, no unsupported filters.
 async function generateMeta() {
   if (!validOutcodes.length) return;
   const btn  = document.getElementById('btnMeta');
@@ -337,40 +340,46 @@ async function generateMeta() {
   const bar  = document.getElementById('metaBar');
   const lbl  = document.getElementById('metaLabel');
   prog.style.display = 'block';
+  bar.style.width = '0%';
 
-  const MAX_TOTAL = 5000; // cap to avoid browser freezing
-  const allPostcodes = [];
-  const CONC = 4;
+  // Build all sector candidates: "AL1 1" … "AL1 9"
+  const sectors = [];
+  for (const oc of validOutcodes) {
+    for (let d = 1; d <= 9; d++) sectors.push(oc + ' ' + d);
+  }
 
-  for (let i = 0; i < validOutcodes.length; i += CONC) {
-    if (allPostcodes.length >= MAX_TOTAL) break;
-    const batch = validOutcodes.slice(i, i + CONC);
-    await Promise.all(batch.map(async (outcode) => {
-      if (allPostcodes.length >= MAX_TOTAL) return;
+  const allPostcodes = new Set();
+  const MAX_TOTAL = 8000;
+  const CONC = 10;
+
+  for (let i = 0; i < sectors.length; i += CONC) {
+    if (allPostcodes.size >= MAX_TOTAL) break;
+    const batch = sectors.slice(i, i + CONC);
+    await Promise.all(batch.map(async (sector) => {
+      if (allPostcodes.size >= MAX_TOTAL) return;
       try {
-        // Fetch all postcodes for this outward code
-        const r = await fetch('https://api.postcodes.io/postcodes?outcode=' + encodeURIComponent(outcode) + '&limit=100');
+        const url = 'https://api.postcodes.io/postcodes/' + encodeURIComponent(sector) + '/autocomplete';
+        const r = await fetch(url);
         if (!r.ok) return;
         const d = await r.json();
-        if (d.status === 200 && Array.isArray(d.result)) {
+        if (d.status === 200 && Array.isArray(d.result) && d.result.length) {
           for (const pc of d.result) {
-            if (allPostcodes.length < MAX_TOTAL) allPostcodes.push(pc.postcode);
+            if (allPostcodes.size < MAX_TOTAL) allPostcodes.add(pc);
           }
         }
       } catch(e) {}
     }));
-    const pct = Math.round((i + CONC) / validOutcodes.length * 100);
-    bar.style.width = Math.min(100, pct) + '%';
-    lbl.textContent = `Fetching postcodes… ${Math.min(i + CONC, validOutcodes.length)}/${validOutcodes.length} districts (${allPostcodes.length.toLocaleString()} found)`;
+    bar.style.width = Math.min(100, Math.round((i + CONC) / sectors.length * 100)) + '%';
+    lbl.textContent = `Fetching postcodes… ${Math.min(i + CONC, sectors.length)}/${sectors.length} sectors checked (${allPostcodes.size.toLocaleString()} found)`;
   }
 
   bar.style.width = '100%';
-  const truncated = allPostcodes.length >= MAX_TOTAL;
-  lbl.textContent = `Done — ${allPostcodes.length.toLocaleString()} postcodes${truncated ? ' (capped at ' + MAX_TOTAL.toLocaleString() + ')' : ''}`;
+  const sorted = [...allPostcodes].sort();
+  const truncated = allPostcodes.size >= MAX_TOTAL;
+  lbl.textContent = `Done — ${sorted.length.toLocaleString()} postcodes${truncated ? ' (capped at ' + MAX_TOTAL.toLocaleString() + ')' : ''}`;
 
-  const text = allPostcodes.join('\n');
-  document.getElementById('metaResults').value = text;
-  document.getElementById('metaCount').textContent = allPostcodes.length.toLocaleString() + ' postcodes' + (truncated ? ' (truncated)' : '');
+  document.getElementById('metaResults').value = sorted.join('\n');
+  document.getElementById('metaCount').textContent = sorted.length.toLocaleString() + ' postcodes' + (truncated ? ' (truncated)' : '');
   document.getElementById('btnCopyMeta').disabled = false;
   document.getElementById('btnDlMeta').disabled = false;
   btn.disabled = false;
