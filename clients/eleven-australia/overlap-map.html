@@ -71,7 +71,7 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Location Overlap Mapper — Pratt Digital · Eleven Australia</title>
+<title>Location Overlap Mapper · Pratt Digital · Eleven Australia</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -93,6 +93,9 @@ header h1 { font-size: 14px; font-weight: 400; color: var(--muted); }
 
 .layout { display: grid; grid-template-columns: 380px 1fr; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+/* Sidebar sections keep their natural height and the sidebar scrolls. Without
+   this, long results lists squash the dataset cards to a sliver. */
+.sidebar > * { flex-shrink: 0; }
 
 .ds-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .ds-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
@@ -181,6 +184,29 @@ textarea::placeholder { color: var(--muted); }
 .legend-grad { width: 60px; height: 6px; border-radius: 3px; }
 
 #map { flex: 1; }
+
+/* ── Mode switch (Coverage / Conversion) ── */
+.mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; }
+.mode-btn { padding: 7px 10px; border: none; border-radius: 7px; background: transparent; font-family: "DM Sans", sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .12s; }
+.mode-btn:hover:not(.active) { color: var(--text); }
+.mode-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.mode-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: -6px; }
+body.mode-conversion .cov-only { display: none !important; }
+body:not(.mode-conversion) .conv-only { display: none !important; }
+.conv-ctrl { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); padding: 0 8px; border-right: 1px solid var(--border); }
+.conv-ctrl input[type=range] { width: 80px; }
+.conv-ctrl .val { min-width: 22px; font-weight: 500; color: var(--text); }
+.tog.conv.active { background: var(--pd-green-light); border-color: var(--pd-green-dark); color: var(--pd-slate); }
+.conv-row { cursor: pointer; border-radius: 4px; padding: 2px 3px; margin: 0 -3px; }
+.conv-row:hover { background: var(--surface2); }
+.conv-row .district { min-width: 38px; }
+.conv-row .cnt { min-width: 92px; font-family: "DM Mono", monospace; font-size: 10px; }
+.conv-note { font-size: 10px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
+.sig { color: var(--text); font-weight: 700; }
+.conv-bubble { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); color: #fff; font-family: "DM Sans", sans-serif; line-height: 1.05; text-align: center; }
+.conv-bubble b { font-size: 11px; font-weight: 700; }
+.conv-bubble span { font-size: 9px; font-weight: 500; opacity: .95; }
+.conv-bubble.low { background: #fff !important; color: #94a3b8; border: 1.5px dashed #94a3b8; box-shadow: none; }
 </style>
 
 <script>
@@ -242,11 +268,18 @@ textarea::placeholder { color: var(--muted); }
 <div class="layout">
   <div class="sidebar">
 
+    <!-- MODE -->
+    <div class="mode-switch" role="tablist" aria-label="Analysis mode">
+      <button class="mode-btn active" id="mode-coverage" role="tab" onclick="setMode('coverage')">Coverage</button>
+      <button class="mode-btn" id="mode-conversion" role="tab" onclick="setMode('conversion')">Conversion</button>
+    </div>
+    <div class="mode-desc" id="modeDesc">Customers against your locations: radius catchments, served vs gaps, location index.</div>
+
     <!-- CUSTOMERS -->
     <div class="ds-card">
       <div class="ds-header customers">
         <div class="ds-dot" style="background:var(--c-customers)"></div>
-        Dataset 1 — Customers / Online Orders
+        <span id="ds1-title">Dataset 1 · Customers / Online Orders</span>
       </div>
       <div class="ds-body">
         <label class="upload-label" id="ul-c">
@@ -255,8 +288,8 @@ textarea::placeholder { color: var(--muted); }
           <div class="fn" id="fn-c"></div>
         </label>
         <textarea id="pa-c" placeholder="Paste postcodes here&#10;SW1A 2AA&#10;M1 1AE…"></textarea>
-        <div class="format-hint">One postcode per row. Headers optional. Columns for name, a revenue/value figure and an owner (e.g. <code>AM</code>) are picked up automatically and carried into popups, exports and the brief.</div>
-        <button class="btn-sample" onclick="loadSample('c')">↗ Load sample customer data</button>
+        <div class="format-hint" id="ds1-hint">One postcode per row. Headers optional. Columns for name, a revenue/value figure and an owner (e.g. <code>AM</code>) are picked up automatically and carried into popups, exports and the brief.</div>
+        <button class="btn-sample cov-only" onclick="loadSample('c')">↗ Load sample customer data</button>
       </div>
     </div>
 
@@ -264,7 +297,7 @@ textarea::placeholder { color: var(--muted); }
     <div class="ds-card">
       <div class="ds-header locations">
         <div class="ds-dot" style="background:var(--c-locations)"></div>
-        Dataset 2 — Salons / Stores / Locations
+        <span id="ds2-title">Dataset 2 · Salons / Stores / Locations</span>
       </div>
       <div class="ds-body">
         <label class="upload-label" id="ul-l">
@@ -273,8 +306,8 @@ textarea::placeholder { color: var(--muted); }
           <div class="fn" id="fn-l"></div>
         </label>
         <textarea id="pa-l" placeholder="name,postcode (name optional)&#10;Bond Street,W1S 1NB&#10;Manchester,M3 2BQ"></textarea>
-        <div class="format-hint">Include a <code>name</code> column for labels on map. Postcode required. Revenue and owner columns are picked up here too.</div>
-        <button class="btn-sample" onclick="loadSample('l')">↗ Load sample salon data</button>
+        <div class="format-hint" id="ds2-hint">Include a <code>name</code> column for labels on map. Postcode required. Revenue and owner columns are picked up here too.</div>
+        <button class="btn-sample cov-only" onclick="loadSample('l')">↗ Load sample salon data</button>
       </div>
     </div>
 
@@ -293,7 +326,7 @@ textarea::placeholder { color: var(--muted); }
     <div id="groupPanel" style="display:none">
       <div class="section-label">
         <span id="groupPanelLabel">Filter</span>
-        <span style="font-weight:400;font-size:9px;color:var(--muted)">— everything below and all exports respect this</span>
+        <span style="font-weight:400;font-size:9px;color:var(--muted)">· everything below and all exports respect this</span>
       </div>
       <div id="groupList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border,#e5e7eb);border-radius:6px;padding:6px;font-size:11px"></div>
       <div style="display:flex;gap:5px;margin-top:5px">
@@ -302,19 +335,36 @@ textarea::placeholder { color: var(--muted); }
       </div>
     </div>
 
-    <div id="statsPanel" style="display:none">
+    <div id="statsPanel" class="cov-only" style="display:none">
       <div class="section-label">Overlap summary</div>
       <div class="stats" id="statsGrid"></div>
     </div>
 
-    <div id="topPanel" style="display:none">
+    <div id="topPanel" class="cov-only" style="display:none">
       <div class="section-label">Top customer districts</div>
       <div class="top-list" id="topList"></div>
     </div>
 
-    <div id="indexPanel" style="display:none">
+    <div id="indexPanel" class="cov-only" style="display:none">
       <div class="section-label">Location index <span style="font-weight:400;font-size:9px;color:var(--muted)">(100 = average density)</span></div>
       <div class="top-list" id="indexList"></div>
+    </div>
+
+    <div id="convStatsPanel" class="conv-only" style="display:none">
+      <div class="section-label">Conversion summary</div>
+      <div class="stats" id="convStatsGrid"></div>
+      <div class="conv-note" id="convMatchNote"></div>
+    </div>
+
+    <div id="convBestPanel" class="conv-only" style="display:none">
+      <div class="section-label">Best converting <span id="convBestLevel"></span></div>
+      <div class="top-list" id="convBestList"></div>
+    </div>
+
+    <div id="convWorstPanel" class="conv-only" style="display:none">
+      <div class="section-label">Worst converting <span id="convWorstLevel"></span></div>
+      <div class="top-list" id="convWorstList"></div>
+      <div class="conv-note" id="convLowNote"></div>
     </div>
 
   </div>
@@ -322,44 +372,67 @@ textarea::placeholder { color: var(--muted); }
   <div class="map-area">
     <div class="map-toolbar">
 
-      <div class="layer-group">
+      <div class="layer-group cov-only">
         <span class="layer-group-label">Customers</span>
         <button class="tog c-dots active" id="btn-c-dots" onclick="toggleLayer('c-dots')">Dots</button>
         <button class="tog c-heat" id="btn-c-heat" onclick="toggleLayer('c-heat')">Heatmap</button>
       </div>
 
-      <div class="layer-group">
+      <div class="layer-group cov-only">
         <span class="layer-group-label">Locations</span>
         <button class="tog l-dots active" id="btn-l-dots" onclick="toggleLayer('l-dots')">Pins</button>
         <button class="tog radius" id="btn-radius" onclick="toggleLayer('radius')">Radius</button>
         <button class="tog l-heat" id="btn-l-heat" onclick="toggleLayer('l-heat')">Heatmap</button>
       </div>
 
-      <div class="radius-ctrl">
+      <div class="radius-ctrl cov-only">
         Radius: <input type="range" id="radiusSlider" min="1" max="30" step="1" value="10" oninput="updateRadius()">
         <span id="radiusVal">10 mi</span>
       </div>
 
-      <div class="layer-group">
+      <div class="layer-group cov-only">
         <span class="layer-group-label">Overlap</span>
         <button class="tog overlap" id="btn-overlap" onclick="toggleOverlap('overlap')" title="Click to show. Click again to isolate (hide all other layers).">✓ Served</button>
         <button class="tog gap" id="btn-gap" onclick="toggleOverlap('gap')" title="Click to show. Click again to isolate (hide all other layers).">✗ Gaps</button>
       </div>
 
+      <div class="layer-group conv-only">
+        <span class="layer-group-label">Group by</span>
+        <button class="tog conv active" id="btn-lvl-area" onclick="setConvLevel('area')" title="Postal area, e.g. EX, SW, BS">Area</button>
+        <button class="tog conv" id="btn-lvl-district" onclick="setConvLevel('district')" title="Postcode district, e.g. EX4, SW11">District</button>
+      </div>
+
+      <div class="conv-ctrl conv-only" title="Areas with fewer enquiries than this are greyed out and left out of the best and worst lists">
+        Min enquiries: <input type="range" id="minEnqSlider" min="5" max="100" step="5" value="20" oninput="updateMinEnq()">
+        <span class="val" id="minEnqVal">20</span>
+      </div>
+
+      <div class="layer-group conv-only">
+        <button class="tog conv" id="btn-hide-low" onclick="toggleHideLow()" title="Hide areas below the minimum">Hide low volume</button>
+      </div>
+
+      <div class="legend conv-only" id="convLegend">
+        <span class="legend-item"><span class="legend-dot" style="background:#e24b4a"></span>Below avg</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Around avg</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#18a058"></span>Above avg</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#fff;border:1.5px dashed #94a3b8"></span>Low volume</span>
+      </div>
+
       <div style="display:flex;gap:5px;margin-left:auto">
         <button class="export-btn" onclick="resetMapView()" title="Re-centre the map on your data">⤾ Reset view</button>
         <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
-        <button class="export-btn" id="exp-served" onclick="exportServed()" style="display:none;background:#e8f7f0;border-color:#18a058;color:#145c38">↓ Served CSV</button>
-        <button class="export-btn" id="exp-gaps" onclick="exportGaps()" style="display:none;background:#fdf0f0;border-color:#e24b4a;color:#b33030">↓ Gaps CSV</button>
-        <button class="export-btn" onclick="exportAll()">↓ Export all</button>
-        <button class="export-btn" id="exp-brief" onclick="generateOverlapBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Client brief</button>
+        <button class="export-btn conv-only" id="exp-conv" onclick="exportConversion()" style="background:var(--pd-green-light);border-color:var(--pd-green-dark);color:var(--pd-slate)">↓ Conversion CSV</button>
+        <button class="export-btn cov-only" id="exp-served" onclick="exportServed()" style="display:none;background:#e8f7f0;border-color:#18a058;color:#145c38">↓ Served CSV</button>
+        <button class="export-btn cov-only" id="exp-gaps" onclick="exportGaps()" style="display:none;background:#fdf0f0;border-color:#e24b4a;color:#b33030">↓ Gaps CSV</button>
+        <button class="export-btn cov-only" onclick="exportAll()">↓ Export all</button>
+        <button class="export-btn cov-only" id="exp-brief" onclick="generateOverlapBrief()" style="display:none;background:#4c565c;color:#fff;border-color:#4c565c">📄 Client brief</button>
       </div>
     </div>
     <div id="map"></div>
     <!-- Isolation mode hint bar -->
     <div id="isolation-hint" style="display:none;position:absolute;bottom:0;left:330px;right:0;z-index:999;background:rgba(30,30,30,0.85);color:#fff;font-size:12px;padding:7px 16px;align-items:center;gap:12px;backdrop-filter:blur(4px)">
       <span id="isolation-label"></span>
-      <span style="color:rgba(255,255,255,0.5)">— click ✓ Served or ✗ Gaps again to exit</span>
+      <span style="color:rgba(255,255,255,0.5)">Click ✓ Served or ✗ Gaps again to exit</span>
       <button onclick="exitIsolation()" style="margin-left:auto;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11px">✕ Exit</button>
     </div>
   </div>
@@ -454,7 +527,9 @@ function showZoomHint(show) {
 /* Re-fit the map to whatever is currently plotted — the way back after the
    view has been dragged or zoomed somewhere unhelpful. */
 function resetMapView() {
-  const pts = [...cResult, ...lResult].filter(r => r.lat != null).map(r => [r.lat, r.lng]);
+  const pts = mode === 'conversion'
+    ? convVisibleGroups().filter(g => g.lat != null).map(g => [g.lat, g.lng])
+    : [...cResult, ...lResult].filter(r => r.lat != null).map(r => [r.lat, r.lng]);
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], animate: false });
   else map.setView([52.5, -1.5], 6);
 }
@@ -464,8 +539,11 @@ function resetMapView() {
    new dimensions first — print-only CSS would leave blank tiles. */
 async function exportMapPDF() {
   if (!map) return;
-  const parts = [`${cResult.length.toLocaleString()} customers`, `${lResult.length.toLocaleString()} locations`,
-                 `${radiusMiles}mi radius`];
+  const parts = mode === 'conversion' && conv.summary
+    ? [`${conv.summary.enq.toLocaleString()} enquiries`, `${conv.summary.conv.toLocaleString()} converted`,
+       `${pct(conv.summary.rate)} overall`, `by ${conv.level}`, `min ${conv.minEnq[conv.level]} enquiries`]
+    : [`${cResult.length.toLocaleString()} customers`, `${lResult.length.toLocaleString()} locations`,
+       `${radiusMiles}mi radius`];
   if (activeGroups) parts.push(`${groupFilterLabel()}: ${[...activeGroups].join(', ')}`);
   parts.push(new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }));
 
@@ -517,12 +595,13 @@ function extractPC(s)   { return PDCSV.extractPC(s); }
 function parseCSV(text, ds) {
   const parsed = PDCSV.records(text);
   const rows = parsed.records;
+  const conversion = typeof mode !== 'undefined' && mode === 'conversion';
   if (ds === 'c') {
     cData = rows; cMeta = parsed;
-    setStatus(`${rows.length} customer rows loaded.${describeCols(parsed)}`);
+    setStatus(`${rows.length} ${conversion ? 'enquiry' : 'customer'} rows loaded.${describeCols(parsed)}`);
   } else {
     lData = rows; lMeta = parsed;
-    setStatus(`${rows.length} location rows loaded.${describeCols(parsed)}`);
+    setStatus(`${rows.length} ${conversion ? 'order' : 'location'} rows loaded.${describeCols(parsed)}`);
   }
   activeGroups = null;   // a new upload resets any territory filter
   _pcNameCache = null;   // postcode→name map must be rebuilt from the new data
@@ -541,7 +620,9 @@ function describeCols(p) {
   return bits.length ? ` Columns: ${bits.join(', ')}.` : '';
 }
 function checkReady() {
-  document.getElementById('plotBtn').disabled = (cData.length === 0 && lData.length === 0);
+  document.getElementById('plotBtn').disabled = mode === 'conversion'
+    ? (cData.length === 0 || lData.length === 0)
+    : (cData.length === 0 && lData.length === 0);
 }
 
 /* Client builds restore saved datasets straight from localStorage, bypassing
@@ -626,7 +707,9 @@ function applyGroupFilter() {
   renderGroupFilter();
   // Zoom to the selected territory — with a filter on, the useful view is that
   // AM's patch, not the whole country. Clearing the filter refits everything.
-  if (Object.keys(geocodeCache).length) rebuild({ fit: true });
+  if (!Object.keys(geocodeCache).length) return;
+  if (mode === 'conversion') buildConversion({ fit: true });
+  else rebuild({ fit: true });
 }
 
 function esc(s) {
@@ -719,6 +802,7 @@ function haversine(lat1,lng1,lat2,lng2) {
 async function runAnalysis() {
   document.getElementById('plotBtn').disabled = true;
   removeAllLayers();
+  removeConvLayer();
 
   // Geocode both sets. Results are cached so the group filter can rebuild
   // without hitting the API again.
@@ -728,6 +812,13 @@ async function runAnalysis() {
   ])];
   const missing = allPC.filter(k => !(k in geocodeCache));
   if (missing.length) Object.assign(geocodeCache, await bulkGeocode(missing));
+  analysed = true;
+
+  if (mode === 'conversion') {
+    buildConversion({ fit: true });
+    checkReady();
+    return;
+  }
 
   rebuild({ fit: true });
 
@@ -909,7 +1000,7 @@ function buildLayer(key) {
       L.circle([r.lat,r.lng], {
         radius: radiusMetres, color: 'var(--c-locations)',
         fillColor: 'var(--c-locations)', fillOpacity: 0.06, weight: 1.5
-      }).bindPopup(`${esc(locLabel(r))} — ${radiusMiles}mi radius`).addTo(lg);
+      }).bindPopup(`${esc(locLabel(r))} · ${radiusMiles}mi radius`).addTo(lg);
     }
     layers[key] = lg.addTo(map);
   }
@@ -1274,7 +1365,7 @@ function generateOverlapBrief() {
   const topGapRegions = Object.entries(gapByRegion).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const maxGapRegion = topGapRegions[0]?.[1]||1;
 
-  // Furthest gap customers — biggest expansion opportunities
+  // Furthest gap customers: biggest expansion opportunities
   const furthestGaps = [...gaps].sort((a,b)=>b.nearestDist-a.nearestDist).slice(0,8);
 
   // Value + group (e.g. AM) analysis — only when the upload carried those columns
@@ -1292,7 +1383,7 @@ function generateOverlapBrief() {
   if (briefHasGroup) {
     const byGroup = {};
     cResult.forEach(c => {
-      const g = c.group || '—';
+      const g = c.group || 'Unassigned';
       byGroup[g] = byGroup[g] || { total: 0, served: 0, value: 0, gapValue: 0 };
       byGroup[g].total++;
       if (c.withinRadius) byGroup[g].served++;
@@ -1327,15 +1418,15 @@ function generateOverlapBrief() {
   const insights = [];
   // Only worth saying when the gap is material — at 0% it reads as noise.
   if (briefHasValue && gapValue > 0 && (100 - servedValuePct) >= 1) {
-    insights.push(`<strong>${PDCSV.fmtValue(gapValue)}</strong> of ${esc(valueLabel)} sits outside all catchments (${100-servedValuePct}% of ${PDCSV.fmtValue(totalValue)} total) — the commercial size of the coverage gap.`);
+    insights.push(`<strong>${PDCSV.fmtValue(gapValue)}</strong> of ${esc(valueLabel)} sits outside all catchments (${100-servedValuePct}% of ${PDCSV.fmtValue(totalValue)} total), the commercial size of the coverage gap.`);
   }
   if (briefHasGroup && groupRows.length > 1) {
     const worst = [...groupRows].sort((a,b) => a.pct - b.pct)[0];
     const best  = [...groupRows].sort((a,b) => b.pct - a.pct)[0];
-    insights.push(`Coverage varies by ${groupLabel}: <strong>${esc(best.group)}</strong> at ${best.pct}% served vs <strong>${esc(worst.group)}</strong> at ${worst.pct}% — the lowest-covered territory is the clearest place to focus.`);
+    insights.push(`Coverage varies by ${groupLabel}: <strong>${esc(best.group)}</strong> at ${best.pct}% served vs <strong>${esc(worst.group)}</strong> at ${worst.pct}%. The lowest-covered territory is the clearest place to focus.`);
   }
-  if (gapPct > 50) insights.push(`<strong>${gapPct}%</strong> of customers fall outside all location catchments — significant untapped demand exists in the current network.`);
-  if (gapPct < 20) insights.push(`<strong>${servedPct}%</strong> of customers are within catchment — strong location coverage. Focus on conversion and retention within served areas.`);
+  if (gapPct > 50) insights.push(`<strong>${gapPct}%</strong> of customers fall outside all location catchments, so significant untapped demand exists in the current network.`);
+  if (gapPct < 20) insights.push(`<strong>${servedPct}%</strong> of customers are within catchment: strong location coverage. Focus on conversion and retention within served areas.`);
   /* Name a handful of examples rather than every location — listing hundreds
      of postcodes made the brief unreadable. Worst/best first, since those are
      the ones worth naming. */
@@ -1345,16 +1436,16 @@ function generateOverlapBrief() {
   };
 
   const underLocs = indexedLocs.filter(l=>l.indexScore<80).sort((a,b)=>a.indexScore-b.indexScore);
-  if (underLocs.length) insights.push(`<strong>${underLocs.length} location${underLocs.length>1?'s':''}</strong> are underindexing relative to network average (lowest: ${nameSome(underLocs)}) — targeted local campaigns recommended.`);
+  if (underLocs.length) insights.push(`<strong>${underLocs.length} location${underLocs.length>1?'s':''}</strong> are underindexing relative to network average (lowest: ${nameSome(underLocs)}). Targeted local campaigns recommended.`);
   const overLocs = indexedLocs.filter(l=>l.indexScore>=120).sort((a,b)=>b.indexScore-a.indexScore);
-  if (overLocs.length) insights.push(`<strong>${overLocs.length} location${overLocs.length>1?'s':''}</strong> are over-indexing (highest: ${nameSome(overLocs)}) — consider expanding capacity or increasing radius targeting here.`);
-  if (topGapRegions.length) insights.push(`Gap customers are most concentrated in <strong>${topGapRegions[0][0]}</strong> (${topGapRegions[0][1]} customers) — priority region for network expansion or targeted digital campaigns.`);
+  if (overLocs.length) insights.push(`<strong>${overLocs.length} location${overLocs.length>1?'s':''}</strong> are over-indexing (highest: ${nameSome(overLocs)}). Consider expanding capacity or increasing radius targeting here.`);
+  if (topGapRegions.length) insights.push(`Gap customers are most concentrated in <strong>${topGapRegions[0][0]}</strong> (${topGapRegions[0][1]} customers): the priority region for network expansion or targeted digital campaigns.`);
 
   const briefHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Coverage Analysis Brief — ${agencyName}</title>
+<title>Coverage Analysis Brief · ${agencyName}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{--primary:${primary};--primary-dark:${primaryDark};--primary-light:${primaryLight};--secondary:${secondary};--slate:#4c565c;--muted:#6b6960;--border:#e2e0d8;--bg:#f5f4f0;--green:#18a058;--green-light:#e8f7f0;--red:#e24b4a;--red-light:#fdf0f0;--amber:#f59e0b;--amber-light:#fff7ed;}
@@ -1515,7 +1606,7 @@ function generateOverlapBrief() {
   <div class="two-col" style="margin-top:16px">
     <div>
       <div class="section-title">Top gap districts</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Most customers outside catchment — highest expansion opportunity</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Most customers outside catchment: highest expansion opportunity</div>
       ${topGapDists.map(([d,c])=>`
         <div class="bar-row">
           <span class="bar-label" style="font-family:monospace;font-size:11px">${d}</span>
@@ -1547,8 +1638,8 @@ function generateOverlapBrief() {
 
   <!-- Furthest gap customers -->
   ${furthestGaps.length?`
-  <div class="section-title page-break">Furthest gap customers — biggest expansion opportunities</div>
-  <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Customers furthest from any location — strongest signal for new location or targeted campaign</div>
+  <div class="section-title page-break">Furthest gap customers: biggest expansion opportunities</div>
+  <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Customers furthest from any location: the strongest signal for new location or targeted campaign</div>
   <div class="gap-grid">
     ${furthestGaps.map(c=>`
       <div class="gap-item">
@@ -1556,7 +1647,7 @@ function generateOverlapBrief() {
         <div class="detail">${c.name ? esc(c.postcode)+' · ' : ''}${esc(c.district)} · ${esc(c.region)}<br>
         ${c.value != null ? esc(valueLabel)+': <strong>'+PDCSV.fmtValue(c.value)+'</strong><br>' : ''}
         ${c.group ? esc(groupLabel)+': '+esc(c.group)+'<br>' : ''}
-        Nearest: ${esc(c.nearestLocation||'—')}<br>${Math.round(c.nearestDist*10)/10} miles away</div>
+        Nearest: ${esc(c.nearestLocation||'n/a')}<br>${Math.round(c.nearestDist*10)/10} miles away</div>
       </div>`).join('')}
   </div>`:''}
 
@@ -1583,6 +1674,8 @@ function clearAll() {
   removeAllLayers();
   cData=[]; lData=[]; cResult=[]; lResult=[];
   cMeta=null; lMeta=null; activeGroups=null; geocodeCache={}; _pcNameCache=null;
+  removeConvLayer(); conv.groups = []; conv.summary = null; analysed = false;
+  ['convStatsPanel','convBestPanel','convWorstPanel'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('groupPanel').style.display='none';
   ['fi-c','fi-l'].forEach(id=>document.getElementById(id).value='');
   ['pa-c','pa-l'].forEach(id=>document.getElementById(id).value='');
@@ -1600,10 +1693,445 @@ function clearAll() {
   document.getElementById('topPanel').style.display='none';
   document.getElementById('indexPanel').style.display='none';
   document.getElementById('progressWrap').classList.remove('active');
-  setStatus('Load at least one dataset to begin. Both datasets enable overlap analysis.');
+  setStatus(MODE_TEXT[mode].status);
   checkReady();
   map.setView([52.5,-1.5],6);
 }
+
+
+// ── Conversion mode ───────────────────────────────────────────────────────
+/* Dataset 1 holds enquiries (or leads), Dataset 2 holds orders (or sales).
+   When both files carry the same reference column (e.g. EL_Number), each
+   order is matched back to its own enquiry and the conversion is credited to
+   the enquiry's postcode. Without a shared reference, orders are counted by
+   their own postcode instead, which is rougher: an order can land in a
+   different area from the enquiry, and small areas can top 100%. */
+let mode = 'coverage';
+let analysed = false;
+let convLayer = null;
+const conv = {
+  level: 'area',
+  minEnq: { area: 20, district: 10 },
+  hideLow: false,
+  groups: [],
+  summary: null,
+  markers: {}
+};
+
+const MODE_TEXT = {
+  coverage: {
+    desc: 'Customers against your locations: radius catchments, served vs gaps, location index.',
+    ds1: 'Dataset 1 · Customers / Online Orders',
+    ds2: 'Dataset 2 · Salons / Stores / Locations',
+    hint1: 'One postcode per row. Headers optional. Columns for name, a revenue/value figure and an owner (e.g. <code>AM</code>) are picked up automatically and carried into popups, exports and the brief.',
+    hint2: 'Include a <code>name</code> column for labels on map. Postcode required. Revenue and owner columns are picked up here too.',
+    status: 'Load at least one dataset to begin. Both datasets enable overlap analysis.'
+  },
+  conversion: {
+    desc: 'Enquiries against orders: which areas turn enquiries into sales best and worst.',
+    ds1: 'Dataset 1 · Enquiries / Leads',
+    ds2: 'Dataset 2 · Orders / Sales',
+    hint1: 'One row per enquiry, with a postcode. An enquiry reference column (e.g. <code>EL_Number</code>, <code>Enquiry ID</code>) lets each order be matched to the exact enquiry it came from.',
+    hint2: 'One row per order. Include the same reference as the enquiries for exact matching, otherwise orders are counted by their own postcode. A value column (e.g. <code>Contract_Value</code>) adds order value per area.',
+    status: 'Load enquiries into Dataset 1 and orders into Dataset 2 to see conversion by area.'
+  }
+};
+
+function setMode(m, opts) {
+  opts = opts || {};
+  if (m !== 'coverage' && m !== 'conversion') m = 'coverage';
+  const changed = m !== mode;
+  mode = m;
+  document.body.classList.toggle('mode-conversion', m === 'conversion');
+  document.getElementById('mode-coverage').classList.toggle('active', m === 'coverage');
+  document.getElementById('mode-conversion').classList.toggle('active', m === 'conversion');
+  const t = MODE_TEXT[m];
+  document.getElementById('modeDesc').textContent = t.desc;
+  document.getElementById('ds1-title').textContent = t.ds1;
+  document.getElementById('ds2-title').textContent = t.ds2;
+  document.getElementById('ds1-hint').innerHTML = t.hint1;
+  document.getElementById('ds2-hint').innerHTML = t.hint2;
+  try { localStorage.setItem('geo_pd_overlap_mode', m); } catch (e) {}
+  if (isolatedLayer) exitIsolation();
+  checkReady();
+  if (!changed && !opts.force) return;
+
+  // Re-draw for the new mode straight away when the data is already geocoded.
+  if (map) { removeAllLayers(); removeConvLayer(); }
+  if (analysed && map && (cData.length || lData.length)) runAnalysis();
+  else setStatus(t.status);
+}
+
+function setConvLevel(level) {
+  conv.level = level;
+  document.getElementById('btn-lvl-area').classList.toggle('active', level === 'area');
+  document.getElementById('btn-lvl-district').classList.toggle('active', level === 'district');
+  document.getElementById('minEnqSlider').value = conv.minEnq[level];
+  document.getElementById('minEnqVal').textContent = conv.minEnq[level];
+  if (analysed && mode === 'conversion') buildConversion({ fit: false });
+}
+
+function updateMinEnq() {
+  const v = parseInt(document.getElementById('minEnqSlider').value, 10);
+  conv.minEnq[conv.level] = v;
+  document.getElementById('minEnqVal').textContent = v;
+  if (conv.groups.length) { classifyGroups(); drawConversion(); renderConversionPanels(); }
+}
+
+function toggleHideLow() {
+  conv.hideLow = !conv.hideLow;
+  document.getElementById('btn-hide-low').classList.toggle('active', conv.hideLow);
+  if (conv.groups.length) drawConversion();
+}
+
+function removeConvLayer() {
+  if (convLayer && map) map.removeLayer(convLayer);
+  convLayer = null;
+  conv.markers = {};
+}
+
+/* Outward code ("EX4") or postal area ("EX") from a normalised postcode. */
+function convKey(pc, level) {
+  const out = String(pc || '').trim().toUpperCase().split(/\s+/)[0];
+  if (level === 'district') return out;
+  const m = out.match(/^[A-Z]{1,2}/);
+  return m ? m[0] : out;
+}
+
+/* Reference values arrive as text; "12967", "12967.0" and " 12967 " are one ref. */
+function refKey(v) {
+  if (v == null) return '';
+  return String(v).trim().replace(/\.0+$/, '').toUpperCase();
+}
+
+/* 95% Wilson score interval for k successes in n trials. Small areas get wide
+   intervals, which is what stops a 3-from-5 area being read as a star. */
+function wilson(k, n) {
+  if (!n) return [0, 1];
+  const z = 1.96, p = k / n, z2 = z * z;
+  const centre = (p + z2 / (2 * n)) / (1 + z2 / n);
+  const half = (z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
+function pct(x, dp) {
+  if (x == null || !isFinite(x)) return '';
+  return (x * 100).toFixed(dp == null ? 1 : dp) + '%';
+}
+
+function refLabel(meta) {
+  return meta && meta.columns && meta.columns.ref >= 0
+    ? (meta.headers[meta.columns.ref] || 'reference') : null;
+}
+
+/* Count enquiries and conversions per area or district. */
+function computeConversion() {
+  const level = conv.level;
+  const enq = cData.filter(r => inGroup(r, cMeta));
+  const ord = lData.filter(r => inGroup(r, lMeta));
+
+  // Orders by reference: count and value per ref (one enquiry can have several orders).
+  const ordByRef = new Map();
+  for (const o of ord) {
+    const k = refKey(o.ref);
+    if (!k) continue;
+    const e = ordByRef.get(k) || { n: 0, value: 0, hasValue: false };
+    e.n++;
+    if (o.value != null) { e.value += o.value; e.hasValue = true; }
+    ordByRef.set(k, e);
+  }
+  const enqRefs = new Set(enq.map(r => refKey(r.ref)).filter(Boolean));
+  let ordersMatched = 0;
+  for (const o of ord) if (enqRefs.has(refKey(o.ref))) ordersMatched++;
+
+  // Use reference matching when a meaningful share of orders find their enquiry.
+  const useRef = ord.length > 0 && ordersMatched / ord.length >= 0.3;
+  const hasValue = !!(lMeta && lMeta.hasValue);
+
+  const groups = new Map();
+  const grp = key => {
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, enq: 0, conv: 0, orders: 0, value: 0, latSum: 0, lngSum: 0, pts: 0, oLatSum: 0, oLngSum: 0, oPts: 0 };
+      groups.set(key, g);
+    }
+    return g;
+  };
+  const addPoint = (g, pc, orderPoint) => {
+    const loc = geocodeCache[PDCSV.pcKey(pc)];
+    if (!loc || !loc.valid || loc.lat == null) return;
+    if (orderPoint) { g.oLatSum += loc.lat; g.oLngSum += loc.lng; g.oPts++; }
+    else            { g.latSum  += loc.lat; g.lngSum  += loc.lng; g.pts++; }
+  };
+
+  const creditedRefs = new Set();
+  for (const r of enq) {
+    const g = grp(convKey(r.postcode, level));
+    g.enq++;
+    addPoint(g, r.postcode, false);
+    if (useRef) {
+      const k = refKey(r.ref);
+      // A ref repeated in the enquiries file is credited once, to its first row.
+      if (k && ordByRef.has(k) && !creditedRefs.has(k)) {
+        creditedRefs.add(k);
+        const o = ordByRef.get(k);
+        g.conv++;
+        g.orders += o.n;
+        g.value += o.value;
+      }
+    }
+  }
+  if (!useRef) {
+    for (const o of ord) {
+      const g = grp(convKey(o.postcode, level));
+      g.conv++;
+      g.orders++;
+      if (o.value != null) g.value += o.value;
+      addPoint(g, o.postcode, true);
+    }
+  }
+
+  let totEnq = 0, totConv = 0, totValue = 0;
+  const list = [];
+  for (const g of groups.values()) {
+    totEnq += g.enq; totConv += g.conv; totValue += g.value;
+    if (g.pts)       { g.lat = g.latSum / g.pts;   g.lng = g.lngSum / g.pts; }
+    else if (g.oPts) { g.lat = g.oLatSum / g.oPts; g.lng = g.oLngSum / g.oPts; }
+    else             { g.lat = null; g.lng = null; }
+    g.rate = g.enq ? g.conv / g.enq : null;
+    g.ci = g.enq ? wilson(Math.min(g.conv, g.enq), g.enq) : null;
+    g.valuePerEnq = hasValue && g.enq ? g.value / g.enq : null;
+    list.push(g);
+  }
+  const rate = totEnq ? totConv / totEnq : 0;
+  for (const g of list) g.index = (g.rate != null && rate) ? Math.round(g.rate / rate * 100) : null;
+
+  conv.groups = list;
+  conv.summary = {
+    useRef, hasValue,
+    enq: totEnq, conv: totConv, rate, value: totValue,
+    ordersTotal: ord.length, ordersMatched: useRef ? ordersMatched : null,
+    ordersUnmatched: useRef ? ord.length - ordersMatched : null,
+    refName: refLabel(lMeta) || refLabel(cMeta),
+    enqHasRef: !!refLabel(cMeta), ordHasRef: !!refLabel(lMeta),
+    valueLabel: hasValue ? lMeta.valueLabel : null
+  };
+  classifyGroups();
+}
+
+/* Apply the minimum-volume rule and flag statistically clear winners/losers. */
+function classifyGroups() {
+  const min = conv.minEnq[conv.level];
+  const avg = conv.summary ? conv.summary.rate : 0;
+  for (const g of conv.groups) {
+    g.enough = g.enq >= min;
+    g.sig = null;
+    if (g.ci && g.enq) {
+      if (g.ci[0] > avg) g.sig = 'above';
+      else if (g.ci[1] < avg) g.sig = 'below';
+    }
+  }
+}
+
+function convColour(g) {
+  if (!g.enough || g.index == null) return '#94a3b8';
+  return indexColour(g.index);
+}
+
+function convVisibleGroups() {
+  return conv.groups.filter(g => g.lat != null && (g.enough || !conv.hideLow));
+}
+
+function convPopup(g) {
+  const s = conv.summary;
+  const lvl = conv.level === 'area' ? 'Postal area' : 'District';
+  const sigTxt = g.sig === 'above' ? 'Clearly above average (95% confidence)'
+               : g.sig === 'below' ? 'Clearly below average (95% confidence)'
+               : 'Not clearly different from average';
+  const ordersLine = s.useRef && g.orders > g.conv
+    ? `<br><span style="font-size:10px;color:#888">${g.orders} orders from ${g.conv} enquiries</span>` : '';
+  return `<strong style="font-size:13px">${esc(g.key)}</strong> <span style="color:#888;font-size:11px">${lvl}</span><br>
+    Enquiries: <strong>${g.enq.toLocaleString()}</strong><br>
+    Converted: <strong>${g.conv.toLocaleString()}</strong>${ordersLine}<br>
+    Conversion rate: <strong style="color:${convColour(g)}">${g.enq ? pct(g.rate) : 'n/a'}</strong>
+      ${g.index != null ? `&nbsp;· Index <strong>${g.index}</strong>` : ''}<br>
+    ${g.ci ? `<span style="font-size:10px;color:#888">Likely range ${pct(g.ci[0],0)} to ${pct(g.ci[1],0)}</span><br>` : ''}
+    ${s.hasValue && g.value ? `${esc(s.valueLabel)}: <strong>${PDCSV.fmtValue(g.value)}</strong><br>
+      Value per enquiry: <strong>${PDCSV.fmtValue(g.valuePerEnq)}</strong><br>` : ''}
+    <hr style="margin:5px 0;border-color:#eee">
+    <span style="font-size:11px">${g.enough ? sigTxt : `Below the ${conv.minEnq[conv.level]}-enquiry minimum, treat with caution`}</span><br>
+    <span style="font-size:10px;color:#888">Network average ${pct(s.rate)} · 100 = average</span>`;
+}
+
+function drawConversion() {
+  removeConvLayer();
+  if (!map) return;
+  const groups = convVisibleGroups();
+  if (!groups.length) return;
+  const maxEnq = Math.max(...groups.map(g => g.enq), 1);
+  const lg = L.layerGroup();
+  // Draw low-volume first so the meaningful bubbles sit on top.
+  const ordered = [...groups].sort((a, b) => (a.enough - b.enough) || (b.enq - a.enq));
+
+  if (conv.level === 'area') {
+    for (const g of ordered) {
+      const size = Math.round(28 + 34 * Math.sqrt(g.enq / maxEnq));
+      const col = convColour(g);
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="conv-bubble${g.enough ? '' : ' low'}" style="width:${size}px;height:${size}px;background:${col}">
+                 <b>${esc(g.key)}</b><span>${g.enq ? pct(g.rate, 0) : ''}</span></div>`,
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+      });
+      const m = L.marker([g.lat, g.lng], { icon, zIndexOffset: g.enough ? 1000 + g.enq : 0 })
+        .bindPopup(convPopup(g)).addTo(lg);
+      conv.markers[g.key] = m;
+    }
+  } else {
+    const renderer = L.canvas({ padding: 0.5 });
+    for (const g of ordered) {
+      const r = 4 + 14 * Math.sqrt(g.enq / maxEnq);
+      const col = convColour(g);
+      const m = L.circleMarker([g.lat, g.lng], {
+        radius: r, renderer,
+        fillColor: g.enough ? col : '#ffffff', fillOpacity: g.enough ? 0.8 : 0.6,
+        color: g.enough ? '#fff' : '#94a3b8', weight: g.enough ? 1.5 : 1,
+        dashArray: g.enough ? null : '3,3'
+      }).bindPopup(convPopup(g)).bindTooltip(`${g.key} · ${g.enq ? pct(g.rate, 0) : 'n/a'} (${g.conv}/${g.enq})`).addTo(lg);
+      conv.markers[g.key] = m;
+    }
+  }
+  convLayer = lg.addTo(map);
+}
+
+function focusConvGroup(key) {
+  const g = conv.groups.find(x => x.key === key);
+  if (!g || g.lat == null) return;
+  if (!g.enough && conv.hideLow) toggleHideLow();
+  map.setView([g.lat, g.lng], Math.max(map.getZoom(), conv.level === 'area' ? 9 : 11), { animate: false });
+  const m = conv.markers[key];
+  if (m) m.openPopup();
+}
+
+function convRow(g, maxRate) {
+  const col = convColour(g);
+  const w = maxRate ? Math.round(g.rate / maxRate * 100) : 0;
+  const mark = g.sig ? ` <span class="sig" title="Clearly ${g.sig} average at 95% confidence">●</span>` : '';
+  return `<div class="top-item conv-row" onclick="focusConvGroup(${JSON.stringify(g.key).replace(/"/g, '&quot;')})" title="Show on map">
+    <span class="district">${esc(g.key)}${mark}</span>
+    <div class="bar-wrap"><div class="bar-inner" style="width:${w}%;background:${col}"></div></div>
+    <span class="cnt"><strong style="color:${col}">${pct(g.rate)}</strong> ${g.conv}/${g.enq}</span>
+  </div>`;
+}
+
+function renderConversionPanels() {
+  const s = conv.summary;
+  if (!s) return;
+  const lvlWord = conv.level === 'area' ? 'areas' : 'districts';
+  const min = conv.minEnq[conv.level];
+
+  let stats = `
+    <div class="stat"><div class="num">${s.enq.toLocaleString()}</div><div class="lbl">Enquiries placed</div></div>
+    <div class="stat overlap"><div class="num">${s.conv.toLocaleString()}</div><div class="lbl">Converted</div></div>
+    <div class="stat" style="grid-column:1/-1"><div class="num">${pct(s.rate)}</div><div class="lbl">Overall conversion rate</div></div>`;
+  if (s.hasValue && s.value) {
+    stats += `
+    <div class="stat"><div class="num" style="font-size:15px">${PDCSV.fmtValue(s.value)}</div><div class="lbl">${esc(s.valueLabel)}</div></div>
+    <div class="stat"><div class="num" style="font-size:15px">${PDCSV.fmtValue(s.enq ? s.value / s.enq : 0)}</div><div class="lbl">Value per enquiry</div></div>`;
+  }
+  document.getElementById('convStatsGrid').innerHTML = stats;
+
+  let note;
+  if (s.useRef) {
+    note = `Orders matched to their enquiry by <strong>${esc(s.refName)}</strong>: ${s.ordersMatched.toLocaleString()} of ${s.ordersTotal.toLocaleString()}.`;
+    if (s.ordersUnmatched) note += ` ${s.ordersUnmatched.toLocaleString()} orders have no matching enquiry with a postcode, so they're not counted.`;
+  } else {
+    note = `No shared reference column between the two files, so orders are counted by their own postcode. Rates are approximate and small ${lvlWord} can exceed 100%.`;
+    if (s.enqHasRef !== s.ordHasRef) note += ' Add the same reference column to both files for exact matching.';
+  }
+  note += ` Enquiries without a valid postcode can't be placed and are left out.`;
+  document.getElementById('convMatchNote').innerHTML = note;
+
+  const ranked = conv.groups.filter(g => g.enough && g.rate != null);
+  const best = [...ranked].sort((a, b) => b.rate - a.rate || b.enq - a.enq).slice(0, 10);
+  const worst = [...ranked].sort((a, b) => a.rate - b.rate || b.enq - a.enq).slice(0, 10);
+  const maxRate = Math.max(...ranked.map(g => g.rate), 0.0001);
+
+  const lvlLabel = `${lvlWord} <span style="font-weight:400;font-size:9px;color:var(--muted)">(${min}+ enquiries · ● = clear at 95%)</span>`;
+  document.getElementById('convBestLevel').innerHTML = lvlLabel;
+  document.getElementById('convWorstLevel').innerHTML = lvlLabel;
+  document.getElementById('convBestList').innerHTML = best.length ? best.map(g => convRow(g, maxRate)).join('')
+    : `<div class="conv-note">No ${lvlWord} with ${min}+ enquiries. Lower the minimum or group by area.</div>`;
+  document.getElementById('convWorstList').innerHTML = worst.length ? worst.map(g => convRow(g, maxRate)).join('') : '';
+
+  const low = conv.groups.filter(g => !g.enough);
+  const lowEnq = low.reduce((a, g) => a + g.enq, 0);
+  document.getElementById('convLowNote').innerHTML = low.length
+    ? `${low.length.toLocaleString()} ${lvlWord} (${lowEnq.toLocaleString()} enquiries) are below the ${min}-enquiry minimum and shown as dashed grey circles.`
+    : '';
+
+  ['convStatsPanel', 'convBestPanel'].forEach(id => document.getElementById(id).style.display = 'block');
+  document.getElementById('convWorstPanel').style.display = ranked.length ? 'block' : 'none';
+}
+
+function buildConversion(opts) {
+  opts = opts || {};
+  computeConversion();
+  drawConversion();
+  renderConversionPanels();
+  if (opts.fit) {
+    const pts = convVisibleGroups().map(g => [g.lat, g.lng]);
+    if (pts.length) map.fitBounds(pts, { padding: [40, 40], animate: false });
+  }
+  const s = conv.summary;
+  const ranked = conv.groups.filter(g => g.enough).length;
+  const sameFile = cData.length && cData.length === lData.length &&
+    cData[0].postcode === lData[0].postcode &&
+    cData[cData.length - 1].postcode === lData[lData.length - 1].postcode;
+  if (sameFile) {
+    setStatus('Both datasets look like the same file. Put enquiries in Dataset 1 and orders in Dataset 2.', 'error');
+    return;
+  }
+  setStatus(`${s.enq.toLocaleString()} enquiries, ${s.conv.toLocaleString()} converted (${pct(s.rate)}). ` +
+    `${ranked} ${conv.level === 'area' ? 'areas' : 'districts'} have enough volume to compare.` +
+    (s.useRef ? '' : ' Orders counted by postcode, not matched by reference.'),
+    'success');
+}
+
+function exportConversion() {
+  if (!conv.summary) { alert('Run analysis first.'); return; }
+  const s = conv.summary;
+  const head = [conv.level === 'area' ? 'postal_area' : 'postcode_district',
+    'enquiries', 'converted', 'conversion_rate_pct', 'index_vs_average',
+    'likely_low_pct', 'likely_high_pct', 'vs_average_95pct', 'meets_min_volume'];
+  if (s.useRef) head.push('orders');
+  if (s.hasValue) head.push(s.valueLabel || 'order_value', 'value_per_enquiry');
+  head.push('lat', 'lng');
+  const rows = [head];
+  const sorted = [...conv.groups].sort((a, b) => (b.enough - a.enough) || ((b.rate || 0) - (a.rate || 0)) || b.enq - a.enq);
+  const r1 = x => x == null ? '' : Math.round(x * 1000) / 10;
+  for (const g of sorted) {
+    const row = [g.key, g.enq, g.conv, r1(g.rate), g.index == null ? '' : g.index,
+      g.ci ? r1(g.ci[0]) : '', g.ci ? r1(g.ci[1]) : '',
+      g.sig || 'not clear', g.enough ? 'yes' : 'no'];
+    if (s.useRef) row.push(g.orders);
+    if (s.hasValue) row.push(Math.round(g.value * 100) / 100, g.valuePerEnq == null ? '' : Math.round(g.valuePerEnq * 100) / 100);
+    row.push(g.lat == null ? '' : g.lat.toFixed(5), g.lng == null ? '' : g.lng.toFixed(5));
+    rows.push(row);
+  }
+  rows.push([]);
+  rows.push(['Overall', s.enq, s.conv, r1(s.rate), 100]);
+  rows.push([s.useRef ? `Matched by ${s.refName}: ${s.ordersMatched} of ${s.ordersTotal} orders` : 'Orders counted by their own postcode']);
+  downloadCSV(rows, `conversion_by_${conv.level}.csv`);
+}
+
+// Start in the mode from the link (?mode=conversion) or the last one used here.
+(function initMode() {
+  let m = null;
+  try { m = new URLSearchParams(location.search).get('mode'); } catch (e) {}
+  if (!m) { try { m = localStorage.getItem('geo_pd_overlap_mode'); } catch (e) {} }
+  if (m === 'conversion') setMode('conversion', { force: false });
+})();
 
 // ── Samples ───────────────────────────────────────────────────────────────
 function loadSample(ds) {
@@ -1851,7 +2379,11 @@ function loadSample(ds) {
         try {
           if (typeof lData !== 'undefined' && lData.length) {
             window.__pdMetaDs = 'l';
+            // pdSave_customers makes the saved dataset active for slot 1 too;
+            // a slot 2 upload must not change slot 1's selection.
+            var _prevC = localStorage.getItem('geo_pd_eleven-australia_customers_active');
             pdSave_customers(lData, name);
+            if (_prevC && _prevC !== name && pdAllDatasets_customers()[_prevC]) localStorage.setItem('geo_pd_eleven-australia_customers_active', _prevC);
             window.__pdMetaDs = null;
             localStorage.setItem(LOC_ACT_KEY, name);
             renderPicker(name);
@@ -1909,7 +2441,9 @@ document.addEventListener('DOMContentLoaded', function() {
           var name2 = (fi2 && fi2.files && fi2.files[0])
             ? fi2.files[0].name.replace(/[.][^.]+$/, '') : 'Locations';
           window.__pdMetaDs = 'l';
+          var _prevC2 = localStorage.getItem('geo_pd_eleven-australia_customers_active');
           pdSave_customers(lData, name2);
+          if (_prevC2 && _prevC2 !== name2 && pdAllDatasets_customers()[_prevC2]) localStorage.setItem('geo_pd_eleven-australia_customers_active', _prevC2);
           window.__pdMetaDs = null;
           localStorage.setItem('geo_pd_eleven-australia_locations_active', name2);
           if (typeof pdRenderPicker_customers === 'function') pdRenderPicker_customers(

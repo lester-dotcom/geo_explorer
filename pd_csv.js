@@ -123,8 +123,19 @@
     name:     /salon|store|branch|outlet|practice|stockist|client|customer|account\s*name|company|business|\bname\b/i,
     value:    /sales|revenue|retail|turnover|spend|value|amount|total|net|gross|£|\$|€/i,
     group:    /^\s*(am|acc(ount)?\s*manager|manager|rep|bdm|owner|territory|agent|area\s*manager|sales\s*rep)\s*$/i,
-    ref:      /acc(ount)?\s*(code|no|num|number|id)|^\s*(code|id|ref|reference)\s*$/i
+    ref:      /acc(ount)?\s*(code|no|num|number|id)|^\s*(code|id|ref|reference)\s*$/i,
+    // Enquiry / lead / job references, so an orders file can be matched back to
+    // the enquiry it came from (e.g. "EL_Number", "Enquiry ID", "Lead Ref").
+    refLead:  /^\s*(el|enq(uiry)?|lead|job)[\s_-]*(no|num|number|id|ref|reference)\s*$/i,
+    // Strong name hint: a header that ends in "name" ("Site_Name", "Salon Name").
+    nameEnd:  /(^|[\s_-])name\s*$/i,
+    // Strong value hint, preferred over generic "amount"/"spend" columns.
+    valueStrong: /sales|revenue|turnover|contract|order\s*value|^\s*value\s*$|[\s_-]value\s*$|net|gross|total/i,
+    // Money columns that are part-payments or overheads, never the headline value.
+    valueAvoid:  /vat|tax|deposit|interim|split|budget|cost|commission|duty|fee|price/i
   };
+
+  var DATE_LIKE = /^\d{1,4}[-\/. ](\d{1,2}|[A-Za-z]{3,9})[-\/. ]\d{2,4}$/;
 
   function isHeaderRow(cells) {
     // A header row has no full postcode in it and no money-looking cell.
@@ -140,7 +151,7 @@
   function columnStats(rows, colCount) {
     var stats = [];
     for (var c = 0; c < colCount; c++) {
-      var pc = 0, money = 0, filled = 0, distinct = {}, lenSum = 0;
+      var pc = 0, money = 0, filled = 0, distinct = {}, lenSum = 0, dates = 0;
       for (var r = 0; r < rows.length; r++) {
         var v = rows[r][c];
         if (v == null || v === '') continue;
@@ -149,12 +160,14 @@
         distinct[v] = 1;
         if (FULL_PC.test(v)) pc++;
         if (looksLikeMoney(v)) money++;
+        if (DATE_LIKE.test(v)) dates++;
       }
       stats.push({
         index: c,
         filled: filled,
         pcRatio: filled ? pc / filled : 0,
         moneyRatio: filled ? money / filled : 0,
+        dateRatio: filled ? dates / filled : 0,
         distinct: Object.keys(distinct).length,
         avgLen: filled ? lenSum / filled : 0
       });
@@ -192,10 +205,15 @@
 
     // Value: money-looking column, preferring a revenue-ish header.
     var valCands = stats.filter(free).filter(function (s) { return s.moneyRatio >= 0.6; });
+    function valScore(s) {
+      var h = hdr(s.index);
+      if (!HEADER_HINTS.value.test(h)) return 0;
+      if (HEADER_HINTS.valueAvoid.test(h)) return 1;
+      return HEADER_HINTS.valueStrong.test(h) ? 3 : 2;
+    }
     valCands.sort(function (a, b) {
-      var ha = HEADER_HINTS.value.test(hdr(a.index)) ? 1 : 0;
-      var hb = HEADER_HINTS.value.test(hdr(b.index)) ? 1 : 0;
-      if (ha !== hb) return hb - ha;
+      var d = valScore(b) - valScore(a);
+      if (d) return d;
       return b.moneyRatio - a.moneyRatio;
     });
     if (valCands.length && HEADER_HINTS.value.test(hdr(valCands[0].index))) {
@@ -217,17 +235,30 @@
       claim('group', grpCands[0].index);
     }
 
-    // Name: header hint first, else the widest free text column.
-    var nameCands = stats.filter(free).filter(function (s) { return s.pcRatio < 0.5 && s.moneyRatio < 0.6; });
-    var namedHit = nameCands.filter(function (s) { return HEADER_HINTS.name.test(hdr(s.index)); });
-    if (namedHit.length) {
-      namedHit.sort(function (a, b) { return b.avgLen - a.avgLen; });
-      claim('name', namedHit[0].index);
-    }
-
-    // Ref: header hint only — too easy to grab an arbitrary code column otherwise.
-    var refHit = stats.filter(free).filter(function (s) { return HEADER_HINTS.ref.test(hdr(s.index)); });
+    // Ref: header hint only, as it is too easy to grab an arbitrary code column
+    // otherwise. Enquiry/lead references win over account codes.
+    var refLead = stats.filter(free).filter(function (s) { return HEADER_HINTS.refLead.test(hdr(s.index)); });
+    var refHit = refLead.length ? refLead
+      : stats.filter(free).filter(function (s) { return HEADER_HINTS.ref.test(hdr(s.index)); });
     if (refHit.length) claim('ref', refHit[0].index);
+
+    // Name: header hint first. A header ending in "name" beats a looser match
+    // (so "Site_Name" wins over "Tel_Customer_For_..."), and date columns never
+    // qualify. Among strong matches the left-most column wins, as the primary
+    // name usually comes first; among loose ones, the widest text.
+    var nameCands = stats.filter(free).filter(function (s) {
+      return s.pcRatio < 0.5 && s.moneyRatio < 0.6 && s.dateRatio < 0.5;
+    });
+    var strongName = nameCands.filter(function (s) { return HEADER_HINTS.nameEnd.test(hdr(s.index)); });
+    if (strongName.length) {
+      claim('name', strongName[0].index);
+    } else {
+      var namedHit = nameCands.filter(function (s) { return HEADER_HINTS.name.test(hdr(s.index)); });
+      if (namedHit.length) {
+        namedHit.sort(function (a, b) { return b.avgLen - a.avgLen; });
+        claim('name', namedHit[0].index);
+      }
+    }
 
     return out;
   }
