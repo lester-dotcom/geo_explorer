@@ -422,6 +422,7 @@ body:not(.mode-conversion) .conv-only { display: none !important; }
       <div style="display:flex;gap:5px;margin-left:auto">
         <button class="export-btn" onclick="resetMapView()" title="Re-centre the map on your data">⤾ Reset view</button>
         <button class="export-btn" onclick="exportMapPDF()" title="Print the current map view to PDF">🖨 Map PDF</button>
+        <button class="export-btn conv-only" id="exp-conv-brief" onclick="generateConversionBrief()" style="background:#4c565c;color:#fff;border-color:#4c565c">📄 Conversion brief</button>
         <button class="export-btn conv-only" id="exp-conv" onclick="exportConversion()" style="background:var(--pd-green-light);border-color:var(--pd-green-dark);color:var(--pd-slate)">↓ Conversion CSV</button>
         <button class="export-btn cov-only" id="exp-served" onclick="exportServed()" style="display:none;background:#e8f7f0;border-color:#18a058;color:#145c38">↓ Served CSV</button>
         <button class="export-btn cov-only" id="exp-gaps" onclick="exportGaps()" style="display:none;background:#fdf0f0;border-color:#e24b4a;color:#b33030">↓ Gaps CSV</button>
@@ -2170,6 +2171,213 @@ function exportConversion() {
   rows.push(['Overall', s.enq, s.conv, r1(s.rate), 100]);
   rows.push([s.useRef ? `Matched by ${s.refName}: ${s.ordersMatched} of ${s.ordersTotal} orders` : 'Orders counted by their own postcode']);
   downloadCSV(rows, `conversion_by_${conv.level}.csv`);
+}
+
+
+/* Printable conversion report, styled to match the coverage brief. Opens in a
+   new tab; "Save as PDF" prints it. Everything is computed from conv.groups,
+   so it always matches the map, the lists and the CSV. */
+function generateConversionBrief() {
+  if (!conv.summary || !conv.groups.length) { alert('Run the conversion analysis first.'); return; }
+  const s = conv.summary;
+  const level = conv.level;
+  const lvl1 = level === 'area' ? 'postal area' : 'postcode district';
+  const lvlN = level === 'area' ? 'postal areas' : 'postcode districts';
+  const min = conv.minEnq[level];
+
+  let branding = {};
+  try { branding = JSON.parse(localStorage.getItem('geoSuiteSettings') || '{}'); } catch (e) {}
+  const agencyName = branding.name || 'Pratt Digital';
+  const primary = branding.primary || '#aec90b';
+  const logoSrc = branding.logo || '';
+  const shade = (hex, pct, toWhite) => {
+    const n = parseInt(hex.slice(1), 16), f = pct / 100;
+    return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v =>
+      Math.max(0, Math.min(255, Math.round(toWhite ? v + (255 - v) * f : v * (1 - f)))).toString(16).padStart(2, '0')).join('');
+  };
+  const primaryDark = shade(primary, 15, false), primaryLight = shade(primary, 88, true);
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const groupLbl = (cMeta && cMeta.hasGroup ? cMeta.groupLabel : null) || (lMeta && lMeta.hasGroup ? lMeta.groupLabel : null) || 'Group';
+  const filterNote = activeGroups ? ` · Filtered to ${groupLbl}: ${[...activeGroups].join(', ')}` : '';
+
+  const ranked = conv.groups.filter(g => g.enough && g.rate != null);
+  const byRate = [...ranked].sort((a, b) => b.rate - a.rate || b.enq - a.enq);
+  const best = byRate.slice(0, 10);
+  const worst = [...ranked].sort((a, b) => a.rate - b.rate || b.enq - a.enq).slice(0, 10);
+  const above = byRate.filter(g => g.sig === 'above');
+  const below = [...byRate].reverse().filter(g => g.sig === 'below');
+  const low = conv.groups.filter(g => !g.enough);
+  const lowEnq = low.reduce((a, g) => a + g.enq, 0);
+  const rankedEnq = ranked.reduce((a, g) => a + g.enq, 0);
+  const andJoin = arr => arr.length < 2 ? arr.join('') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
+  const names = list => andJoin(list.map(g => `<strong>${esc(g.key)}</strong> (${pct(g.rate)})`));
+
+  // ── Key insights, in plain English ──
+  const insights = [];
+  if (byRate.length >= 2) {
+    const hi = byRate[0], lo = byRate[byRate.length - 1];
+    insights.push(`Across the ${byRate.length} ${lvlN} with ${min}+ enquiries, conversion runs from <strong>${pct(hi.rate)}</strong> in <strong>${esc(hi.key)}</strong> to <strong>${pct(lo.rate)}</strong> in <strong>${esc(lo.key)}</strong>, against <strong>${pct(s.rate)}</strong> overall.`);
+  }
+  if (above.length) insights.push(`${above.length === 1 ? 'One ' + lvl1 + ' converts' : above.length + ' ' + lvlN + ' convert'} clearly above average, beyond what chance would explain: ${names(above)}.`);
+  if (below.length) insights.push(`${below.length === 1 ? 'One ' + lvl1 + ' converts' : below.length + ' ' + lvlN + ' convert'} clearly below average: ${names(below)}.`);
+  if (!above.length && !below.length && byRate.length)
+    insights.push(`No ${lvl1} is clearly different from the average yet. The spread between ${lvlN} is within what you would expect from chance at these volumes, so treat the rankings as directional.`);
+  const top5 = [...ranked].sort((a, b) => b.enq - a.enq).slice(0, 5);
+  if (top5.length >= 3 && s.enq) {
+    const e5 = top5.reduce((a, g) => a + g.enq, 0), c5 = top5.reduce((a, g) => a + g.conv, 0);
+    insights.push(`The five busiest ${lvlN} (${andJoin(top5.map(g => esc(g.key)))}) bring in ${Math.round(e5 / s.enq * 100)}% of enquiries and convert at ${pct(c5 / e5)} combined.`);
+  }
+  if (s.hasValue && s.enq) {
+    const vRank = ranked.filter(g => g.valuePerEnq != null).sort((a, b) => b.valuePerEnq - a.valuePerEnq);
+    const avgV = s.value / s.enq;
+    if (vRank.length && avgV > 0) {
+      const v = vRank[0];
+      insights.push(`On ${esc(s.valueLabel)}, <strong>${esc(v.key)}</strong> is worth the most per enquiry at <strong>${PDCSV.fmtValue(v.valuePerEnq)}</strong>, ${(v.valuePerEnq / avgV).toFixed(1)}x the ${PDCSV.fmtValue(avgV)} average.`);
+    }
+  }
+  if (low.length) insights.push(`${low.length} ${lvlN} with fewer than ${min} enquiries (${lowEnq.toLocaleString()} enquiries, ${Math.round(lowEnq / s.enq * 100)}% of the total) are not ranked, as their rates are too unreliable to compare.`);
+
+  // ── Suggested actions for paid media ──
+  const actions = [];
+  if (above.length) actions.push(`Test positive location bid adjustments or budget weighting towards ${andJoin(above.map(g => esc(g.key)))}, where enquiries are most likely to become orders.`);
+  if (below.length) actions.push(`Review ${andJoin(below.map(g => esc(g.key)))} before cutting spend: check enquiry quality, response times and coverage in those areas. If the gap holds, reduce bids there or exclude the weakest.`);
+  if (s.hasValue) actions.push(`Where value per enquiry differs from conversion rate, value is the better guide for bidding, as it reflects order size as well as win rate.`);
+  actions.push(`Re-run this report quarterly. Rates at ${lvl1} level move as volumes build, and a ${lvl1} needs around ${min}+ enquiries before its rate is worth acting on.`);
+
+  const badge = g => {
+    const cls = g.index >= 120 ? 'hi' : g.index >= 80 ? 'mid' : 'lo';
+    return `<span class="badge ${cls}">${pct(g.rate)}</span>`;
+  };
+  const sigTxt = g => g.sig === 'above' ? '<span class="sig up">Clearly above</span>'
+                    : g.sig === 'below' ? '<span class="sig down">Clearly below</span>'
+                    : '<span class="sig">Not clear</span>';
+  const row = g => `<tr>
+      <td class="key">${esc(g.key)}</td>
+      <td>${g.enq.toLocaleString()}</td>
+      <td>${g.conv.toLocaleString()}</td>
+      <td>${badge(g)}</td>
+      <td>${g.index}</td>
+      <td class="muted">${pct(g.ci[0], 0)} to ${pct(g.ci[1], 0)}</td>
+      ${s.hasValue ? `<td>${g.valuePerEnq != null ? PDCSV.fmtValue(g.valuePerEnq) : ''}</td>` : ''}
+      <td>${sigTxt(g)}</td>
+    </tr>`;
+  const thead = `<thead><tr><th>${level === 'area' ? 'Area' : 'District'}</th><th>Enquiries</th><th>Converted</th><th>Rate</th><th>Index</th><th>Likely range</th>${s.hasValue ? '<th>Value / enquiry</th>' : ''}<th>Vs average</th></tr></thead>`;
+  const table = list => `<table class="tbl">${thead}<tbody>${list.map(row).join('')}</tbody></table>`;
+
+  const method = s.useRef
+    ? `Each order was matched to the enquiry it came from using ${esc(s.refName)} (${s.ordersMatched.toLocaleString()} of ${s.ordersTotal.toLocaleString()} orders matched), and credited to the enquiry's postcode.${s.ordersUnmatched ? ` ${s.ordersUnmatched.toLocaleString()} orders had no matching enquiry with a postcode and are not counted.` : ''}`
+    : `The two files share no reference column, so orders are counted by their own postcode. Rates are approximate: an order can sit in a different ${lvl1} from its enquiry.`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Conversion Analysis Brief · ${esc(agencyName)}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--primary:${primary};--primary-dark:${primaryDark};--primary-light:${primaryLight};--slate:#4c565c;--muted:#6b6960;--border:#e2e0d8;--bg:#f5f4f0;--green:#18a058;--green-light:#e8f7f0;--red:#e24b4a;--red-light:#fdf0f0;--amber:#f59e0b;--amber-light:#fff7ed;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;color:#1a1a18;background:#fff;font-size:13px;line-height:1.6;}
+  @media print{body{font-size:11px;}.no-print{display:none!important;}.page-break{page-break-before:always;}.tbl tr,.box{break-inside:avoid;}}
+  @page{margin:15mm;size:A4;}
+  .page{max-width:860px;margin:0 auto;padding:30px;}
+  .head{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:4px solid var(--primary);margin-bottom:24px;gap:16px;}
+  .logo{max-height:44px;max-width:180px;object-fit:contain;}
+  .logo.ph{background:var(--primary);color:var(--slate);font-weight:700;font-size:14px;padding:8px 14px;border-radius:6px;}
+  .head-r{text-align:right;}
+  .title{font-size:20px;font-weight:700;color:var(--slate);}
+  .meta{font-size:11px;color:var(--muted);margin-top:3px;}
+  .sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--primary-dark);margin:22px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .sec small{font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:10px;}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .stat{background:var(--bg);border-radius:8px;padding:10px 12px;border-left:3px solid var(--primary);}
+  .stat.g{border-left-color:var(--green);}
+  .stat h4{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;}
+  .stat .v{font-size:20px;font-weight:700;color:var(--slate);line-height:1;}
+  .stat .s{font-size:10px;color:var(--muted);margin-top:3px;}
+  .box{background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:12px 16px;}
+  .box.plain{background:var(--bg);border-color:var(--border);}
+  .item{font-size:12px;line-height:1.7;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);}
+  .item:last-child{border-bottom:none;}
+  .item::before{content:'→ ';color:var(--primary-dark);font-weight:700;}
+  .tbl{width:100%;border-collapse:collapse;font-size:11px;}
+  .tbl th{text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 8px;border-bottom:2px solid var(--border);}
+  .tbl td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  .tbl tr:last-child td{border-bottom:none;}
+  .key{font-family:monospace;font-size:12px;font-weight:700;}
+  .muted{color:var(--muted);font-size:10px;}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;}
+  .badge.hi{background:var(--green-light);color:#145c38;}
+  .badge.mid{background:var(--amber-light);color:#92400e;}
+  .badge.lo{background:var(--red-light);color:#b91c1c;}
+  .sig{font-size:10px;color:var(--muted);}
+  .sig.up{color:#145c38;font-weight:600;}
+  .sig.down{color:#b91c1c;font-weight:600;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .note{font-size:10px;color:var(--muted);line-height:1.6;margin-top:8px;}
+  .foot{margin-top:24px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted);}
+  .bar{position:fixed;bottom:20px;right:20px;display:flex;gap:8px;z-index:100;}
+  .btn{padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;}
+  .btn.p{background:var(--primary);color:var(--slate);}
+  .btn.s{background:#fff;color:var(--slate);border:1px solid var(--border);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    ${logoSrc ? `<img class="logo" src="${esc(logoSrc)}" alt="${esc(agencyName)}">` : `<div class="logo ph">${esc(agencyName)}</div>`}
+    <div class="head-r">
+      <div class="title">Enquiry to Order Conversion</div>
+      <div class="meta">Generated ${today} · ${esc(agencyName)} · Geo Intelligence Suite · By ${lvl1}, ${min}+ enquiries${esc(filterNote)}</div>
+    </div>
+  </div>
+
+  <div class="sec">Conversion summary</div>
+  <div class="stats">
+    <div class="stat"><h4>Enquiries</h4><div class="v">${s.enq.toLocaleString()}</div><div class="s">${conv.groups.length.toLocaleString()} ${lvlN}</div></div>
+    <div class="stat g"><h4>Converted to order</h4><div class="v" style="color:var(--green)">${s.conv.toLocaleString()}</div><div class="s">${s.useRef ? 'matched by ' + esc(s.refName) : 'counted by postcode'}</div></div>
+    <div class="stat"><h4>Overall conversion</h4><div class="v">${pct(s.rate)}</div><div class="s">index 100 = this average</div></div>
+    ${s.hasValue
+      ? `<div class="stat"><h4>Value per enquiry</h4><div class="v">${PDCSV.fmtValue(s.value / s.enq)}</div><div class="s">${PDCSV.fmtValue(s.value)} ${esc(s.valueLabel)}</div></div>`
+      : `<div class="stat"><h4>${lvlN} ranked</h4><div class="v">${ranked.length}</div><div class="s">${Math.round(rankedEnq / s.enq * 100)}% of enquiries</div></div>`}
+  </div>
+
+  ${insights.length ? `<div class="sec">Key insights</div><div class="box">${insights.map(i => `<div class="item">${i}</div>`).join('')}</div>` : ''}
+
+  <div class="sec">Suggested actions <small>· for paid media planning</small></div>
+  <div class="box plain">${actions.map(i => `<div class="item">${i}</div>`).join('')}</div>
+
+  ${ranked.length ? `
+  <div class="sec page-break">Best converting ${lvlN} <small>· ${min}+ enquiries</small></div>
+  ${table(best)}
+  <div class="sec">Worst converting ${lvlN} <small>· ${min}+ enquiries</small></div>
+  ${table(worst)}
+  <p class="note"><strong>Likely range</strong> is the 95% confidence interval for each rate: with few enquiries it is wide, so a high or low rate may be chance. <strong>Clearly above / below</strong> means the whole range sits above or below the ${pct(s.rate)} average. <strong>Index</strong> compares each rate with the average (100). </p>
+  ` : `<div class="sec">Rankings</div><p class="note">No ${lvl1} has ${min}+ enquiries. Lower the minimum or group by postal area to rank them.</p>`}
+
+  ${ranked.length > 20 ? `
+  <div class="sec page-break">All ranked ${lvlN} <small>· highest to lowest conversion</small></div>
+  ${table(byRate)}` : ''}
+
+  <div class="sec">How this was calculated</div>
+  <p class="note" style="margin-top:0">${method} Enquiries without a valid UK postcode can't be placed on the map and are left out. ${lvlN.charAt(0).toUpperCase() + lvlN.slice(1)} with fewer than ${min} enquiries are shown on the map but not ranked.</p>
+
+  <div class="foot">
+    <span>${esc(agencyName)} · Geo Intelligence Suite</span>
+    <span>Generated ${today} · Confidential</span>
+  </div>
+</div>
+<div class="bar no-print">
+  <button class="btn s" onclick="window.close()">✕ Close</button>
+  <button class="btn p" onclick="window.print()">🖨 Save as PDF</button>
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('Your browser blocked the report window. Allow pop-ups for this site and try again.'); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 // Start in the mode from the link (?mode=conversion) or the last one used here.
