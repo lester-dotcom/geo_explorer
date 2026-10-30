@@ -313,6 +313,7 @@ body:not(.mode-conversion) .conv-only { display: none !important; }
 
     <div>
       <button class="btn btn-primary" id="plotBtn" onclick="runAnalysis()" disabled>Analyse & plot</button>
+      <button class="btn btn-secondary conv-only" onclick="swapDatasets()" title="Swap Dataset 1 and Dataset 2">⇄ Swap enquiries and orders</button>
       <button class="btn btn-secondary" onclick="clearAll()">Clear all</button>
     </div>
 
@@ -1762,6 +1763,33 @@ function setMode(m, opts) {
   else setStatus(t.status);
 }
 
+/* Swap the two slots. In client builds the saved-dataset pickers are swapped
+   too, so the corrected order survives a reload. */
+function swapDatasets() {
+  const selC = document.getElementById('pd-sel-customers');
+  const selL = document.getElementById('pd-sel-locations');
+  if (selC && selL && typeof pdUseSelected_customers === 'function' && typeof pdUseSelected_locations === 'function') {
+    const a = selC.value, b = selL.value;
+    selC.value = b; selL.value = a;
+    pdUseSelected_customers();
+    // pdUseSelected_locations re-renders its picker, so re-find the select.
+    const selL2 = document.getElementById('pd-sel-locations');
+    if (selL2) selL2.value = a;
+    pdUseSelected_locations();
+  } else {
+    [cData, lData] = [lData, cData];
+    [cMeta, lMeta] = [lMeta, cMeta];
+    const fc = document.getElementById('fn-c'), fl = document.getElementById('fn-l');
+    if (fc && fl) [fc.textContent, fl.textContent] = [fl.textContent, fc.textContent];
+  }
+  _pcNameCache = null;
+  activeGroups = null;
+  renderGroupFilter();
+  checkReady();
+  if (analysed && mode === 'conversion') runAnalysis();
+  else setStatus(`Swapped. Dataset 1 now has ${cData.length.toLocaleString()} rows, Dataset 2 has ${lData.length.toLocaleString()}.`);
+}
+
 function setConvLevel(level) {
   conv.level = level;
   document.getElementById('btn-lvl-area').classList.toggle('active', level === 'area');
@@ -1846,6 +1874,13 @@ function computeConversion() {
 
   // Use reference matching when a meaningful share of orders find their enquiry.
   const useRef = ord.length > 0 && ordersMatched / ord.length >= 0.3;
+
+  // Swap check: if slot 1's refs match slot 2 far better than the other way
+  // round, the orders are in slot 1 and the enquiries in slot 2.
+  const ordRefSet = new Set(ord.map(r => refKey(r.ref)).filter(Boolean));
+  let revMatched = 0;
+  for (const r of enq) if (ordRefSet.has(refKey(r.ref))) revMatched++;
+  const looksSwapped = !useRef && enq.length > 0 && revMatched / enq.length >= 0.3;
   const hasValue = !!(lMeta && lMeta.hasValue);
 
   const groups = new Map();
@@ -1908,7 +1943,7 @@ function computeConversion() {
 
   conv.groups = list;
   conv.summary = {
-    useRef, hasValue,
+    useRef, hasValue, looksSwapped,
     enq: totEnq, conv: totConv, rate, value: totValue,
     ordersTotal: ord.length, ordersMatched: useRef ? ordersMatched : null,
     ordersUnmatched: useRef ? ord.length - ordersMatched : null,
@@ -2077,6 +2112,18 @@ function renderConversionPanels() {
 function buildConversion(opts) {
   opts = opts || {};
   computeConversion();
+  const sw = conv.summary;
+  if (sw.looksSwapped || sw.rate > 1) {
+    // Never draw a map from datasets in the wrong slots: the rates are nonsense.
+    removeConvLayer();
+    ['convStatsPanel', 'convBestPanel', 'convWorstPanel'].forEach(id => document.getElementById(id).style.display = 'none');
+    const why = sw.looksSwapped
+      ? `The references in Dataset 1 (${cData.length.toLocaleString()} rows) match Dataset 2 (${lData.length.toLocaleString()} rows) the wrong way round.`
+      : `Dataset 2 has more orders than Dataset 1 has enquiries (${sw.conv.toLocaleString()} vs ${sw.enq.toLocaleString()}).`;
+    setStatus(why + ' Enquiries and orders look like they are in the wrong slots. Use "Swap enquiries and orders" below Analyse & plot.', 'error');
+    conv.groups = []; conv.summary = null;
+    return;
+  }
   drawConversion();
   renderConversionPanels();
   if (opts.fit) {
@@ -2418,10 +2465,14 @@ function loadSample(ds) {
 
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof parseCSV === 'function') {
-    _pdOrigParse_customers = parseCSV;
-    _pdOrigParse_locations = parseCSV;
+    // The tool's parseCSV needs a slot ('c' or 'l'). The shared picker calls
+    // _pdOrigParse_customers(text) with no slot, which used to send a slot 1
+    // upload into slot 2 (and save slot 1's old rows under the new file name).
+    var _pdOverlapParse = parseCSV;
+    _pdOrigParse_customers = function(text) { _pdOverlapParse(text, 'c'); };
+    _pdOrigParse_locations = function(text) { _pdOverlapParse(text, 'l'); };
     parseCSV = function(text, ds) {
-      _pdOrigParse_customers(text, ds);
+      _pdOverlapParse(text, ds);
       setTimeout(function() {
         if (ds === 'c' && typeof cData !== 'undefined' && cData.length) {
           var fi = document.getElementById('fi-c');
