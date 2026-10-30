@@ -584,9 +584,31 @@ function tagZones() {
 }
 
 // ── Main analysis ─────────────────────────────────────────────────────────
+/* Saved datasets restored from the shared pool can hold full records
+   ({postcode, name, value, ...}) saved by other tools, or bare postcode strings
+   from older saves. This tool works on bare postcodes, so flatten them. */
+function asPostcodes(list) {
+  return (list || []).map(c => (c && typeof c === 'object') ? c.postcode : c)
+    .filter(pc => typeof pc === 'string' && pc.trim());
+}
+
+/* Wrapper so an unexpected error reports itself instead of leaving the
+   progress bar frozen and the button disabled. */
 async function runAnalysis() {
+  try {
+    await runAnalysisInner();
+  } catch (e) {
+    console.error(e);
+    setProgress(100, '');
+    setStatus('Something went wrong during the analysis: ' + (e && e.message ? e.message : e) + '. Try re-uploading the customer file.', 'error');
+    document.getElementById('analyseBtn').disabled = false;
+  }
+}
+
+async function runAnalysisInner() {
   document.getElementById('analyseBtn').disabled = true;
   removeAllLayers();
+  customerData = asPostcodes(customerData);
 
   // Collect all postcodes to geocode — locations + customers
   // Key everything by unspaced uppercase to avoid any format mismatch

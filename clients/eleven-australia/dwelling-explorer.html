@@ -629,7 +629,16 @@ async function geocodeDistricts(districts) {
 }
 
 // ── Run customer analysis ─────────────────────────────────────────────────
+/* Saved datasets restored from the shared pool can hold full records
+   ({postcode, name, value, ...}) saved by other tools, or bare postcode strings
+   from older saves. This tool works on bare postcodes, so flatten them. */
+function asPostcodes(list) {
+  return (list || []).map(c => (c && typeof c === 'object') ? c.postcode : c)
+    .filter(pc => typeof pc === 'string' && pc.trim());
+}
+
 async function runCustomerAnalysis() {
+  customerData = asPostcodes(customerData);
   if (!customerData.length) return;
   const btn = document.getElementById('analyseBtn');
   btn.disabled = true;
